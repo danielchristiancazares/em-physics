@@ -90,7 +90,8 @@ mod tests {
     #[test]
     fn vacuum_impedance_matches_reference() {
         let z0 = MaterialProperties::vacuum().intrinsic_impedance();
-        assert_relative_eq!(z0.value(), 376.730_313_668, epsilon = 1.0e-6);
+        // Z₀ = √(μ₀/ε₀) using CODATA 2022 values = 376.730313412 Ω
+        assert_relative_eq!(z0.value(), 376.730_313_412, epsilon = 1.0e-9);
         let printed = format!("{z0}");
         assert!(
             printed.ends_with('Ω'),

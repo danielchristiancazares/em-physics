@@ -73,17 +73,18 @@ All calculations use IEEE 754 double precision (f64), providing ~15-17 decimal d
 
 ### Physical constants precision
 
-Constants are based on CODATA recommended values:
+Constants follow CODATA 2022 recommended values from NIST:
 
 | Constant | Code value | Significant figures | Status | Relative accuracy |
 |----------|-----------|---------------------|---------|-------------------|
 | Speed of light *c* | 299,792,458 m/s | exact | SI definition (2019) | exact |
 | Elementary charge *e* | 1.602176634×10⁻¹⁹ C | exact | SI definition (2019) | exact |
 | Boltzmann constant *k_B* | 1.380649×10⁻²³ J/K | exact | SI definition (2019) | exact |
-| Vacuum permittivity ε₀ | 8.8541878128×10⁻¹² F/m | 11 digits | measured (CODATA) | ~10⁻¹⁰ |
-| Vacuum permeability μ₀ | 1.25663706212×10⁻⁶ H/m | 12 digits | measured (CODATA) | ~10⁻¹⁰ |
+| Vacuum permittivity ε₀ | 8.8541878188×10⁻¹² F/m | 12 digits | measured (CODATA 2022) | 1.6×10⁻¹⁰ |
+| Vacuum permeability μ₀ | 1.25663706127×10⁻⁶ H/m | 12 digits | measured (CODATA 2022) | 1.6×10⁻¹⁰ |
+| Impedance of vacuum Z₀ | 376.730313412 Ω | derived | from √(μ₀/ε₀) | ~10⁻¹⁰ |
 
-**Note**: The ε₀ and μ₀ values in the code are approximations. Latest NIST CODATA 2022 values differ in the final digits. For applications requiring higher precision, consult <https://physics.nist.gov/cuu/Constants/> for current values and uncertainties.
+**Reference**: NIST CODATA 2022 values at <https://physics.nist.gov/cuu/Constants/>
 
 ### Numerical methods accuracy
 - **Biot-Savart integration**: Midpoint quadrature with adaptive sampling (20-800 subdivisions). Error scales as 1/N² for smooth integrands. Typical relative error ~10⁻⁶ to 10⁻⁹ for well-behaved geometries.
@@ -93,9 +94,9 @@ Constants are based on CODATA recommended values:
 ## Scientific references
 
 ### Physical constants
-Physical constants follow CODATA recommended values published by NIST:
-- Mohr, P. J., Newell, D. B., Taylor, B. N., & Tiesinga, E. (2019). *CODATA Recommended Values of the Fundamental Physical Constants: 2018*. Available at: <https://physics.nist.gov/cuu/Constants/>
-- Latest values: NIST CODATA 2022 (<https://physics.nist.gov/cuu/Constants/>)
+Physical constants follow CODATA 2022 recommended values published by NIST:
+- Tiesinga, E., Mohr, P. J., Newell, D. B., & Taylor, B. N. (2021). *CODATA Recommended Values of the Fundamental Physical Constants: 2018*. Reviews of Modern Physics, 93(2), 025010.
+- Updated to CODATA 2022 revision available at: <https://physics.nist.gov/cuu/Constants/>
 - Values reflect the 2019 SI redefinition where certain constants (speed of light, elementary charge, Boltzmann constant) are exact by definition
 
 ### Circuit analysis
