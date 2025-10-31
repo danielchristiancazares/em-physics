@@ -407,6 +407,12 @@ impl MnaBuilder {
         (v, i)
     }
 
+    /// Returns the system matrix and RHS for testing purposes.
+    #[cfg(test)]
+    pub fn system_matrix_and_rhs(&self) -> (DMatrix<Complex<Scalar>>, DVector<Complex<Scalar>>) {
+        (self.a.clone(), self.b.clone())
+    }
+
     /// Current-controlled current source (CCCS). Output from `op` to `on` equals `alpha * i_k`.
     /// `ctrl_k` is the index returned by stamping a (dependent or independent) voltage source.
     pub fn stamp_cccs(&mut self, op: Node, on: Node, ctrl_k: usize, alpha: Scalar) {

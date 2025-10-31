@@ -15,6 +15,9 @@ pub mod stamp;
 /// Optional sparse helpers (feature = "sparse").
 #[cfg(feature = "sparse")]
 pub mod sparse;
+/// Sparse linear system solvers (feature = "sparse").
+#[cfg(feature = "sparse")]
+pub mod solver;
 
 pub use analysis::{AdmittanceMatrix, NodalAnalysis};
 pub use component::{Capacitor, Component, Inductor, Resistor, Switch, VoltageSource};
