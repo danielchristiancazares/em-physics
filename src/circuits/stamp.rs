@@ -117,6 +117,21 @@ impl NodalBuilder {
     }
 }
 
+/// Report with diagnostics from solving an MNA system.
+#[derive(Debug, Clone, Default)]
+pub struct SolveReport {
+    /// True if the linear solve succeeded.
+    pub success: bool,
+    /// Rough condition estimate from LU diagonal ratio (larger is worse).
+    pub cond_estimate: Option<Scalar>,
+    /// Indices of floating (disconnected) nodes detected before solve.
+    pub floating_nodes: Vec<usize>,
+    /// Any overload conditions detected (placeholder for now).
+    pub overloads: Vec<String>,
+    /// Additional human-readable notes.
+    pub notes: Vec<String>,
+}
+
 /// Modified Nodal Analysis (MNA) builder supporting voltage sources and VCVS/VCCS.
 pub struct MnaBuilder {
     n: usize,
@@ -321,10 +336,57 @@ impl MnaBuilder {
         }
     }
 
+    /// Solves the MNA system and returns diagnostics.
+    #[must_use]
+    pub fn solve_with_report(&self) -> (Option<DVector<Complex<Scalar>>>, SolveReport) {
+        let mut report = SolveReport::default();
+        // Detect floating nodes: rows in the node block with near-zero coefficients.
+        let n = self.n;
+        for i in 0..n {
+            let mut row_norm = 0.0;
+            for j in 0..(self.n + self.m) {
+                let v = self.a[(i, j)];
+                row_norm += v.norm();
+            }
+            if row_norm <= 1e-14 {
+                report.floating_nodes.push(i);
+            }
+        }
+
+        let lu = self.a.clone().lu();
+        // Condition estimate from U diagonal (ratio max/min magnitude).
+        let mut max_d = 0.0;
+        let mut min_d = f64::INFINITY;
+        let u = lu.u();
+        let dim = u.nrows().min(u.ncols());
+        for k in 0..dim {
+            let d = u[(k, k)].norm();
+            if d > max_d {
+                max_d = d;
+            }
+            if d < min_d {
+                min_d = d;
+            }
+        }
+        if min_d.is_finite() && min_d > 0.0 {
+            report.cond_estimate = Some(max_d / min_d);
+        }
+
+        let sol = lu.solve(&self.b);
+        report.success = sol.is_some();
+        if !report.floating_nodes.is_empty() {
+            report
+                .notes
+                .push("floating nodes detected; results may be invalid".into());
+        }
+        (sol, report)
+    }
+
     /// Solves the MNA system.
     #[must_use]
     pub fn solve(&self) -> Option<DVector<Complex<Scalar>>> {
-        self.a.clone().lu().solve(&self.b)
+        let (x, _report) = self.solve_with_report();
+        x
     }
 
     /// Returns (node_count, source_count).
@@ -413,7 +475,8 @@ mod tests_mna {
         mna.stamp_voltage_source(Some(0), None, Complex::new(10.0, 0.0)); // n1 = node 0
         mna.stamp_resistor(Some(0), Some(1), 1_000.0);
         mna.stamp_resistor(Some(1), None, 2_000.0);
-        let x = mna.solve().expect("solution");
+        let (x, _r) = mna.solve_with_report();
+        let x = x.expect("solution");
         let v_n0 = x[1].re;
         assert_relative_eq!(v_n0, 10.0 * 2000.0 / 3000.0, epsilon = 1e-9);
     }
@@ -428,7 +491,8 @@ mod tests_mna {
         mna.stamp_resistor(Some(1), None, 1_000.0);
         // VCCS from op=node1 to on=GND, controlled by cp=node0 to cn=GND, g=1e-3 S
         mna.stamp_vccs(Some(1), None, Some(0), None, 1e-3);
-        let x = mna.solve().expect("solution");
+        let (x, _r) = mna.solve_with_report();
+        let x = x.expect("solution");
         assert_relative_eq!(x[1].re, 1.0, epsilon = 1e-9);
     }
 
@@ -441,7 +505,8 @@ mod tests_mna {
         mna.stamp_resistor(Some(0), None, 1_000.0);
         mna.stamp_resistor(Some(1), None, 1_000.0);
         mna.stamp_cccs(Some(1), None, k, 1.0);
-        let x = mna.solve().expect("solution");
+        let (x, _r) = mna.solve_with_report();
+        let x = x.expect("solution");
         assert_relative_eq!(x[1].re, 1.0, epsilon = 1e-9);
     }
 }

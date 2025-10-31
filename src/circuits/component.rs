@@ -144,6 +144,43 @@ impl VoltageSource {
     }
 }
 
+/// Idealized switch modeled as a resistor toggling between `on_resistance` and `off_resistance`.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
+pub struct Switch {
+    name: String,
+    /// Resistance when closed (Ω).
+    pub on_resistance: Scalar,
+    /// Resistance when open (Ω). Use a large value, e.g., 1e12.
+    pub off_resistance: Scalar,
+    /// True => closed (conducting).
+    pub closed: bool,
+}
+
+impl Switch {
+    /// Creates a switch with specified on/off resistances.
+    #[must_use]
+    pub fn new(name: impl Into<String>, on_resistance: Scalar, off_resistance: Scalar, closed: bool) -> Self {
+        Self { name: name.into(), on_resistance, off_resistance, closed }
+    }
+
+    /// Effective resistance in the current state.
+    #[must_use]
+    pub fn effective_resistance(&self) -> Scalar {
+        if self.closed { self.on_resistance } else { self.off_resistance }
+    }
+}
+
+impl Component for Switch {
+    fn impedance(&self, _omega: Scalar) -> Complex<Scalar> {
+        Complex::new(self.effective_resistance(), 0.0)
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
@@ -165,5 +202,15 @@ mod tests {
         let z = c.impedance(omega);
         assert_relative_eq!(z.re, 0.0, epsilon = 1.0e-12);
         assert!(z.im < 0.0);
+    }
+
+    #[test]
+    fn switch_effective_resistance_changes_with_state() {
+        let mut s = Switch::new("S1", 0.1, 1e12, false);
+        assert!(s.effective_resistance() > 1e6);
+        s.closed = true;
+        assert!(s.effective_resistance() < 1.0);
+        let z = s.impedance(1.0);
+        assert!(z.re < 1.0);
     }
 }

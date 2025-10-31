@@ -17,6 +17,6 @@ pub mod stamp;
 pub mod sparse;
 
 pub use analysis::{AdmittanceMatrix, NodalAnalysis};
-pub use component::{Capacitor, Component, Inductor, Resistor, VoltageSource};
+pub use component::{Capacitor, Component, Inductor, Resistor, Switch, VoltageSource};
 pub use network::{ConnectionKind, Network};
 pub use twoport::TwoPort;

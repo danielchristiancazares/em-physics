@@ -55,6 +55,40 @@ pub fn magnetic_field_segment(point: R3, segment: &WireSegment3D, current: CScal
     b * coeff
 }
 
+/// Closed-form magnetic flux density for a finite straight segment if well-conditioned.
+/// Falls back to zero if the perpendicular distance is too small (caller can retry numerically).
+#[must_use]
+pub fn magnetic_field_segment_closed_form(point: R3, segment: &WireSegment3D, current: CScalar) -> Option<C3> {
+    let v = segment.end - segment.start;
+    let len = v.norm();
+    if len <= Scalar::EPSILON {
+        return Some(C3::zeros());
+    }
+    let u = v / len;
+    let r1 = segment.start - point; // vector from point to start
+    let r2 = segment.end - point; // vector from point to end
+    let r_perp = (point - segment.start) - u * u.dot(&(point - segment.start));
+    let rho = r_perp.norm();
+    if rho <= 1e-9 {
+        return None;
+    }
+    let z1 = r1.dot(&u);
+    let z2 = r2.dot(&u);
+    let s1 = z1 / (rho.hypot(z1));
+    let s2 = z2 / (rho.hypot(z2));
+    let coeff = CScalar::new(VACUUM_PERMEABILITY / (4.0 * std::f64::consts::PI), 0.0) * current;
+    // Direction follows right-hand rule: u × r_perp
+    let dir = u.cross(&r_perp);
+    let dir_norm = dir.norm();
+    if dir_norm <= Scalar::EPSILON {
+        return None;
+    }
+    let b_mag = (s2 - s1) / rho;
+    let unit = dir / dir_norm;
+    let b_vec = unit * b_mag;
+    Some(b_vec.map(|x| CScalar::new(x, 0.0)) * coeff)
+}
+
 /// Calculates vector potential A (weber per meter) at `point` due to a single segment
 /// using midpoint quadrature with `samples` subdivisions: A = μ0 I / (4π) ∫ dl / r.
 #[must_use]
@@ -81,10 +115,14 @@ pub fn vector_potential_segment(point: R3, segment: &WireSegment3D, current: CSc
 pub fn magnetic_field_from_lines(point: R3, lines: &[LineCurrent]) -> C3 {
     let mut b = C3::zeros();
     for lc in lines {
-        let l = lc.segment.length();
-        let d = distance_point_to_segment(point, &lc.segment).max(1e-6);
-        let m = ((l / d).ceil() as usize).clamp(20, 800);
-        b += magnetic_field_segment(point, &lc.segment, lc.current, m);
+        if let Some(bc) = magnetic_field_segment_closed_form(point, &lc.segment, lc.current) {
+            b += bc;
+        } else {
+            let l = lc.segment.length();
+            let d = distance_point_to_segment(point, &lc.segment).max(1e-6);
+            let m = ((l / d).ceil() as usize).clamp(20, 1200);
+            b += magnetic_field_segment(point, &lc.segment, lc.current, m);
+        }
     }
     b
 }
@@ -154,10 +192,24 @@ mod tests {
     }
 
     #[test]
+    fn closed_form_matches_numeric_segment() {
+        let seg = WireSegment3D {
+            start: R3::new(-0.5, 0.0, 0.0),
+            end: R3::new(0.5, 0.0, 0.0),
+        };
+        let p = R3::new(0.0, 0.2, 0.0);
+        let i = CScalar::new(2.0, 0.0);
+        let bn = magnetic_field_segment(p, &seg, i, 2000);
+        let bc = magnetic_field_segment_closed_form(p, &seg, i).unwrap();
+        let err = ((bn[0] - bc[0]).norm() + (bn[1] - bc[1]).norm() + (bn[2] - bc[2]).norm())
+            / (bn[0].norm() + bn[1].norm() + bn[2].norm()).max(1e-12);
+        assert!(err < 1e-4, "relative error too large: {err}");
+    }
+
+    #[test]
     fn e_field_from_a_scales_with_frequency() {
         let a = C3::new(CScalar::new(1.0, 0.0), CScalar::new(0.0, 0.0), CScalar::new(0.0, 0.0));
         let e = electric_field_from_vector_potential(a, 2.0);
         assert_relative_eq!(e[0].im, -2.0, epsilon = 1e-12);
     }
 }
-

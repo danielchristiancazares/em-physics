@@ -2,7 +2,7 @@ use nalgebra::{DMatrix, DVector};
 use num_complex::Complex;
 
 use crate::math::Scalar;
-use crate::circuits::stamp::MnaBuilder;
+use crate::circuits::stamp::{MnaBuilder, SolveReport};
 
 /// Dense admittance matrix used in nodal analysis.
 pub type AdmittanceMatrix = DMatrix<Complex<Scalar>>;
@@ -74,6 +74,8 @@ pub struct AcPointMna {
     pub voltages: DVector<Complex<Scalar>>,
     /// Source currents (complex), in the order voltage sources were stamped.
     pub source_currents: DVector<Complex<Scalar>>,
+    /// Diagnostics gathered during solve.
+    pub report: SolveReport,
 }
 
 /// Sweeps an MNA-stamped circuit across `omegas`.
@@ -89,16 +91,43 @@ where
     for w in omegas {
         let mut mna = MnaBuilder::new(node_count);
         stamp(w, &mut mna);
-        if let Some(x) = mna.solve() {
+        let (x, report) = mna.solve_with_report();
+        if let Some(x) = x {
             let (v, i) = mna.split_solution(x);
+            out.push(AcPointMna { omega: w, voltages: v, source_currents: i, report });
+        } else {
             out.push(AcPointMna {
                 omega: w,
-                voltages: v,
-                source_currents: i,
+                voltages: DVector::zeros(mna.dimensions().0),
+                source_currents: DVector::zeros(mna.dimensions().1),
+                report,
             });
         }
     }
     out
+}
+
+use std::io;
+use std::io::Write;
+
+/// Writes `FrequencyPoint` vector to a CSV writer.
+pub fn write_frequency_points_csv<W: Write>(mut w: W, points: &[FrequencyPoint]) -> io::Result<()> {
+    writeln!(w, "omega,ReZ,ImZ")?;
+    for p in points {
+        writeln!(w, "{:.16e},{:.16e},{:.16e}", p.omega, p.impedance.re, p.impedance.im)?;
+    }
+    Ok(())
+}
+
+/// Writes a CSV of node voltage at `node_index` across an AC MNA sweep.
+pub fn write_ac_points_mna_node_csv<W: Write>(mut w: W, data: &[AcPointMna], node_index: usize) -> io::Result<()> {
+    writeln!(w, "omega,ReV,ImV,cond_estimate,success")?;
+    for p in data {
+        let v = if node_index < p.voltages.len() { p.voltages[node_index] } else { Complex::new(0.0, 0.0) };
+        let cond = p.report.cond_estimate.unwrap_or(f64::NAN);
+        writeln!(w, "{:.16e},{:.16e},{:.16e},{:.6e},{}", p.omega, v.re, v.im, cond, p.report.success)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

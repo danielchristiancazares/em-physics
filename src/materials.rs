@@ -2,8 +2,8 @@
 
 use crate::constants::{VACUUM_PERMEABILITY, VACUUM_PERMITTIVITY};
 use crate::math::Scalar;
-use crate::units::Impedance;
 use num_complex::Complex;
+use crate::units::Impedance;
 
 /// Fundamental linear isotropic material parameters expressed in SI units.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -34,12 +34,39 @@ impl MaterialProperties {
         let value = (self.permeability / self.permittivity).sqrt();
         Impedance::new(value)
     }
+
+    /// Complex response using ε_c(ω) = ε - jσ/ω and μ_c = μ (non-magnetic lossless).
+    #[must_use]
+    pub fn response(&self, omega: Scalar) -> MaterialResponse {
+        let j = Complex::new(0.0, 1.0);
+        let eps_c = Complex::new(self.permittivity, 0.0) - j * (self.conductivity / omega);
+        let mu_c = Complex::new(self.permeability, 0.0);
+        MaterialResponse { epsilon: eps_c, mu: mu_c, sigma: self.conductivity }
+    }
+}
+
+/// Frequency-dependent complex material response.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MaterialResponse {
+    /// Complex permittivity ε(ω) in F/m.
+    pub epsilon: Complex<Scalar>,
+    /// Complex permeability μ(ω) in H/m.
+    pub mu: Complex<Scalar>,
+    /// Conduction σ in S/m (real), included separately for convenience.
+    pub sigma: Scalar,
 }
 
 /// Trait for frequency-dependent material models.
 pub trait DispersiveMaterial {
     /// Returns effective properties at the angular frequency `omega` (rad/s).
     fn properties(&self, omega: Scalar) -> MaterialProperties;
+}
+
+/// Trait for frequency-dependent complex response providers.
+pub trait MaterialResponseProvider {
+    /// Complex ε(ω), μ(ω), and σ at `omega`.
+    fn response(&self, omega: Scalar) -> MaterialResponse;
 }
 
 /// Simple Drude dispersive material approximation.
@@ -73,11 +100,32 @@ impl DispersiveMaterial for DrudeModel {
         let epsilon = epsilon_rel.re * VACUUM_PERMITTIVITY;
         let sigma = -omega * epsilon_rel.im * VACUUM_PERMITTIVITY;
 
-        MaterialProperties {
-            permittivity: epsilon,
-            permeability: VACUUM_PERMEABILITY,
-            conductivity: sigma,
+        MaterialProperties { permittivity: epsilon, permeability: VACUUM_PERMEABILITY, conductivity: sigma }
+    }
+}
+
+impl MaterialResponseProvider for MaterialProperties {
+    fn response(&self, omega: Scalar) -> MaterialResponse {
+        self.response(omega)
+    }
+}
+
+impl MaterialResponseProvider for DrudeModel {
+    fn response(&self, omega: Scalar) -> MaterialResponse {
+        if omega.abs() < Scalar::EPSILON {
+            return MaterialResponse {
+                epsilon: Complex::new(self.epsilon_infinity * VACUUM_PERMITTIVITY, 0.0),
+                mu: Complex::new(VACUUM_PERMEABILITY, 0.0),
+                sigma: 0.0,
+            };
         }
+        let j = Complex::new(0.0, 1.0);
+        let omega_c = Complex::new(omega, 0.0);
+        let numerator = Complex::new(self.plasma_frequency.powi(2), 0.0);
+        let denominator = omega_c * (omega_c + j * self.collision_frequency);
+        let epsilon_rel = Complex::new(self.epsilon_infinity, 0.0) - numerator / denominator;
+        let epsilon = epsilon_rel * Complex::new(VACUUM_PERMITTIVITY, 0.0);
+        MaterialResponse { epsilon, mu: Complex::new(VACUUM_PERMEABILITY, 0.0), sigma: 0.0 }
     }
 }
 

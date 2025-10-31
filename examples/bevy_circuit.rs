@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use em_physics::circuits::stamp::MnaBuilder;
+use em_physics::circuits::component::Switch;
 use em_physics::fields::{
     electric_field_from_vector_potential, magnetic_field_from_lines, vector_potential_from_lines,
     LineCurrent, WireSegment3D,
@@ -18,8 +19,7 @@ const AC_FREQUENCY: Scalar = 60.0;
 
 #[derive(Resource)]
 struct CircuitState {
-    gates: [bool; BRANCH_COUNT],
-    resistances: [Scalar; BRANCH_COUNT],
+    switches: [Switch; BRANCH_COUNT],
     branch_currents: [Scalar; BRANCH_COUNT],
     source_current: Scalar,
     node_voltage: Scalar,
@@ -32,8 +32,11 @@ struct CircuitState {
 impl Default for CircuitState {
     fn default() -> Self {
         Self {
-            gates: [true, false, true],
-            resistances: [100.0, 220.0, 330.0],
+            switches: [
+                Switch::new("S1", 100.0, 1e12, true),
+                Switch::new("S2", 220.0, 1e12, false),
+                Switch::new("S3", 330.0, 1e12, true),
+            ],
             branch_currents: [0.0; BRANCH_COUNT],
             source_current: 0.0,
             node_voltage: 0.0,
@@ -176,12 +179,14 @@ fn setup(mut commands: Commands) {
 fn handle_input(mut state: ResMut<CircuitState>, keys: Res<ButtonInput<KeyCode>>) {
     for (i, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3].iter().enumerate() {
         if keys.just_pressed(*key) {
-            state.gates[i] = !state.gates[i];
+            state.switches[i].closed = !state.switches[i].closed;
             state.dirty = true;
         }
     }
     if keys.just_pressed(KeyCode::Space) {
-        state.gates = state.gates.map(|g| !g);
+        for s in &mut state.switches {
+            s.closed = !s.closed;
+        }
         state.dirty = true;
     }
 }
@@ -194,9 +199,10 @@ fn recompute_circuit(mut state: ResMut<CircuitState>) {
     let mut mna = MnaBuilder::new(1);
     mna.stamp_voltage_source(Some(0), None, Complex::new(SUPPLY_VOLTAGE, 0.0));
 
-    for (gate, &res) in state.gates.iter().zip(state.resistances.iter()) {
-        if *gate {
-            mna.stamp_resistor(Some(0), None, res);
+    for sw in &state.switches {
+        let r = sw.effective_resistance();
+        if r < 1e11 { // treat as connected
+            mna.stamp_resistor(Some(0), None, r);
         }
     }
 
@@ -218,11 +224,8 @@ fn recompute_circuit(mut state: ResMut<CircuitState>) {
     let v0 = v_nodes[0].re;
     state.node_voltage = v0;
     for i in 0..BRANCH_COUNT {
-        state.branch_currents[i] = if state.gates[i] {
-            v0 / state.resistances[i]
-        } else {
-            0.0
-        };
+        let r = state.switches[i].effective_resistance();
+        state.branch_currents[i] = if r < 1e11 { v0 / r } else { 0.0 };
     }
     state.source_current = source_currents.get(0).map(|c| c.re).unwrap_or(0.0);
     state.power = state.node_voltage * state.source_current;
@@ -263,11 +266,11 @@ fn recompute_circuit(mut state: ResMut<CircuitState>) {
 
 fn update_visuals(
     state: Res<CircuitState>,
-    mut gate_query: Query<(&GateDisplay, &mut Sprite)>,
-    mut branch_query: Query<(&BranchDisplay, &mut Sprite)>,
+    mut gate_query: Query<(&GateDisplay, &mut Sprite), Without<BranchDisplay>>,
+    mut branch_query: Query<(&BranchDisplay, &mut Sprite), Without<GateDisplay>>,
 ) {
     for (GateDisplay(idx), mut sprite) in gate_query.iter_mut() {
-        let color = if state.gates[*idx] {
+        let color = if state.switches[*idx].closed {
             Color::rgb(0.1, 0.75, 0.3)
         } else {
             Color::rgb(0.25, 0.25, 0.25)
@@ -296,30 +299,29 @@ fn update_text(state: Res<CircuitState>, mut query: Query<&mut Text, With<InfoTe
         return;
     }
 
-    let mut text = query.single_mut();
     let gate_labels: Vec<String> = state
-        .gates
+        .switches
         .iter()
         .enumerate()
-        .map(|(i, g)| format!("{}:{}", i + 1, if *g { "ON" } else { "OFF" }))
+        .map(|(i, s)| format!("{}:{}", i + 1, if s.closed { "ON" } else { "OFF" }))
         .collect();
 
     let branch_lines: Vec<String> = state
         .branch_currents
         .iter()
-        .zip(state.resistances.iter())
+        .zip(state.switches.iter())
         .enumerate()
-        .map(|(i, (i_curr, r))| {
+        .map(|(i, (i_curr, sw))| {
             format!(
                 "Branch {}: {:.3} A through {:.0} Ω",
                 i + 1,
                 i_curr,
-                r
+                if sw.closed { sw.on_resistance } else { sw.off_resistance }
             )
         })
         .collect();
 
-    text.sections[0].value = format!(
+    let display_text = format!(
         "Gate toggles: [{}]  (press 1/2/3, space to invert)\n\
 Node voltage: {:.3} V   Source current: {:.3} A   Power: {:.3} W\n{}\n|B| at probe: {:.3} μT   |E| (60 Hz): {:.3} mV/m",
         gate_labels.join("  "),
@@ -330,5 +332,12 @@ Node voltage: {:.3} V   Source current: {:.3} A   Power: {:.3} W\n{}\n|B| at pro
         state.b_field_mag * 1e6,
         state.e_field_mag * 1e3,
     );
-}
 
+    // Print to console for debugging
+    println!("\n{}", display_text);
+
+    // Update text entity (may not render on WSLg)
+    if let Ok(mut text) = query.get_single_mut() {
+        text.sections[0].value = display_text;
+    }
+}
