@@ -1,0 +1,44 @@
+[package]
+name = "em-physics"
+version = "0.1.0"
+edition = "2024"
+authors = ["Daniel <daniel@example.com>"]
+description = "Research-grade electromagnetism and circuit analysis toolkit for Rust."
+license = "MIT OR Apache-2.0"
+repository = "https://example.com/em-physics"
+keywords = ["electromagnetism", "circuit-analysis", "simulation", "physics"]
+categories = ["science", "mathematics", "simulation"]
+readme = "README.md"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["std"]
+std = []
+serde = ["dep:serde", "nalgebra/serde-serialize"]
+sparse = ["dep:nalgebra-sparse"]
+
+[dependencies]
+nalgebra = { version = "0.33", features = ["std"] }
+num-traits = "0.2"
+thiserror = "1.0"
+serde = { version = "1.0", optional = true, features = ["derive"] }
+approx = "0.5"
+num-complex = "0.4"
+nalgebra-sparse = { version = "0.9", optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+bevy = { version = "0.13", default-features = false, features = [
+    "bevy_asset",
+    "bevy_core_pipeline",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_winit",
+    "bevy_scene",
+    "x11",
+] }
