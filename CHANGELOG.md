@@ -21,10 +21,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CSV helpers for `FrequencyPoint` and AC MNA sweeps to streamline plotting and regression capture.
 - Transient waveform capture and CSV export functions for time-domain results.
 
+### Removed
+- Deprecated `CLAUDE.md` contributor instructions file.
+
+## [0.1.1] - 2025-10-31
 ### Changed
 - Refined `VACUUM_PERMITTIVITY`, `VACUUM_PERMEABILITY`, and `FREE_SPACE_IMPEDANCE` to CODATA 2022 values with higher precision.
 - Tightened vacuum impedance regression test tolerance to reflect CODATA 2022 data.
 - Updated documentation to reference CODATA 2022 constants and list free-space impedance.
 
-### Removed
-- Deprecated `CLAUDE.md` contributor instructions file.
+## [0.1.0] - 2025-10-30
+### Added
+- Initial release with dense Modified Nodal Analysis (MNA) circuit solver.
+- AC frequency-domain analysis with complex frequency support.
+- Passive component library (resistors, capacitors, inductors, voltage/current sources).
+- Controlled sources (VCCS, VCVS, CCCS, CCVS) for dependent elements.
+- Material properties and dispersive media support.
+- Magnetic field computation using Biot-Savart law.
+- Bevy-based interactive visualization examples.
+- CSV export utilities for analysis results.
