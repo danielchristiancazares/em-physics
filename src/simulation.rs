@@ -433,20 +433,42 @@ impl SimulationEngine for MnaTransientEngine {
         self.waveform.source_currents.clear();
 
         let mut t = 0.0;
-        for _k in 0..steps {
+
+        // Reuse LU factorization across steps when topology and dt are constant.
+        // We compute LU once from the first step's system matrix and then only
+        // rebuild the RHS vector on subsequent steps.
+        let mut cached_lu: Option<nalgebra::LU<Complex<Scalar>, nalgebra::Dyn, nalgebra::Dyn>> = None;
+        let mut system_dim: usize = 0;
+
+        for step_idx in 0..steps {
             let mut mna = MnaBuilder::new(self.node_count);
 
-            // Passive linear elements
+            // Passive linear elements (time-invariant)
             self.stamp_passive_elements(&mut mna, dt);
 
-            // Integrator companion models
+            // Integrator companion models (constant for fixed dt)
             self.stamp_integrator_elements(&mut mna, dt);
 
-            // Time-varying sources at current time
+            // Time-varying sources at current time (affects RHS)
             self.stamp_dynamic_elements(&mut mna, dt, t);
 
-            let (x_opt, _report) = mna.solve_with_report();
-            let x = x_opt.ok_or_else(|| SimulationError::InvalidConfig("linear solve failed in transient step".into()))?;
+            // Build or reuse LU
+            let (a, b) = mna.system_matrix_and_rhs();
+            if cached_lu.is_none() {
+                // First step: factor once
+                system_dim = a.nrows();
+                let lu = a.lu();
+                cached_lu = Some(lu);
+            } else if a.nrows() != system_dim || a.ncols() != system_dim {
+                return Err(SimulationError::InvalidConfig("system matrix dimension changed across steps".into()));
+            }
+
+            // Solve using cached LU
+            let x = cached_lu
+                .as_ref()
+                .and_then(|lu| lu.solve(&b))
+                .ok_or_else(|| SimulationError::InvalidConfig("linear solve failed in transient step".into()))?;
+
             let (v_complex, i_sources_complex) = mna.split_solution(x);
 
             // Capture waveforms (real parts)

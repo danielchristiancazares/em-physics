@@ -372,6 +372,379 @@ impl SparseSolver for BaselineLuSolver {
     }
 }
 
+/// Automatic solver selection based on problem characteristics.
+///
+/// Analyzes the system matrix to recommend an appropriate solver type
+/// (direct vs iterative) based on size, sparsity, and conditioning.
+///
+/// # Selection Criteria
+///
+/// **Direct Solvers (Baseline LU)**:
+/// - Systems with <1000 nodes
+/// - Dense matrices (density > 10%)
+/// - When symbolic factorization can be reused (AC sweeps)
+///
+/// **Iterative Solvers (BiCGSTAB/GMRES)**:
+/// - Systems with >10,000 nodes
+/// - Very sparse matrices (density < 1%)
+/// - Memory-constrained environments
+/// - Systems with good preconditioners available
+///
+/// **Hybrid Zone (1k-10k nodes)**:
+/// - Direct if sufficient memory
+/// - Iterative if memory-constrained or very sparse
+///
+/// # References
+///
+/// - Davis (2010). "Algorithm 907: KLU". Recommends direct for circuit matrices <100k nonzeros.
+/// - Saad (2003). "Iterative Methods". Recommends iterative for large sparse (>10k unknowns).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SolverRecommendation {
+    /// Use direct solver (LU factorization).
+    Direct,
+    /// Use iterative solver (BiCGSTAB or GMRES).
+    Iterative,
+    /// Either approach viable; user/application should decide.
+    Either,
+}
+
+/// Recommends solver type based on matrix characteristics.
+///
+/// # Arguments
+///
+/// * `n` - Number of unknowns (matrix dimension)
+/// * `nnz` - Number of nonzeros in the matrix
+/// * `available_memory_gb` - Available RAM in gigabytes (optional)
+///
+/// # Returns
+///
+/// Recommended solver type with rationale
+pub fn recommend_solver(
+    n: usize,
+    nnz: usize,
+    available_memory_gb: Option<f64>,
+) -> (SolverRecommendation, String) {
+    let density = (nnz as f64) / (n * n) as f64;
+
+    // Estimate memory requirements
+    let direct_memory_gb = (n * n * std::mem::size_of::<Complex<Scalar>>()) as f64 / 1e9;
+    let iterative_memory_gb = (nnz * std::mem::size_of::<Complex<Scalar>>() * 10) as f64 / 1e9; // ~10x nnz for working vectors
+
+    // Very small systems: direct is faster
+    if n < 1000 {
+        return (
+            SolverRecommendation::Direct,
+            format!("Small system ({} nodes): direct solver overhead minimal, ~{:.1}MB memory",
+                   n, direct_memory_gb * 1000.0)
+        );
+    }
+
+    // Memory constraint check
+    if let Some(avail_gb) = available_memory_gb {
+        if direct_memory_gb > avail_gb * 0.5 {
+            return (
+                SolverRecommendation::Iterative,
+                format!("Memory-constrained: direct needs {:.1}GB > {:.1}GB available. Iterative needs ~{:.1}GB",
+                       direct_memory_gb, avail_gb, iterative_memory_gb)
+            );
+        }
+    }
+
+    // Large systems: iterative required
+    if n > 50_000 {
+        return (
+            SolverRecommendation::Iterative,
+            format!("Large system ({} nodes): direct unfeasible ({:.1}GB), iterative required ({:.1}GB)",
+                   n, direct_memory_gb, iterative_memory_gb)
+        );
+    }
+
+    // Very sparse: iterative favorable
+    if density < 0.001 && n > 5000 {
+        return (
+            SolverRecommendation::Iterative,
+            format!("Very sparse ({:.2e} density, {} nonzeros): iterative favorable",
+                   density, nnz)
+        );
+    }
+
+    // Medium range: either works
+    if n >= 1000 && n <= 10_000 {
+        return (
+            SolverRecommendation::Either,
+            format!("Medium system ({} nodes, {:.1}GB direct vs {:.1}GB iterative): both viable",
+                   n, direct_memory_gb, iterative_memory_gb)
+        );
+    }
+
+    // Default for medium-large: prefer iterative for safety
+    (
+        SolverRecommendation::Iterative,
+        format!("System size {} nodes, {:.2e} density: iterative recommended",
+               n, density)
+    )
+}
+
+#[cfg(test)]
+mod solver_selection_tests {
+    use super::*;
+
+    #[test]
+    fn recommend_direct_for_small() {
+        let (rec, msg) = recommend_solver(500, 2500, None);
+        assert_eq!(rec, SolverRecommendation::Direct);
+        assert!(msg.contains("Small system"));
+    }
+
+    #[test]
+    fn recommend_iterative_for_large() {
+        let (rec, _msg) = recommend_solver(100_000, 500_000, None);
+        assert_eq!(rec, SolverRecommendation::Iterative);
+    }
+
+    #[test]
+    fn recommend_iterative_for_memory_constrained() {
+        // 5k x 5k dense would need ~200MB
+        let (rec, msg) = recommend_solver(5000, 25_000_000, Some(0.1)); // Only 100MB available
+        assert_eq!(rec, SolverRecommendation::Iterative);
+        assert!(msg.contains("Memory-constrained"));
+    }
+
+    #[test]
+    fn recommend_either_for_medium() {
+        let (rec, _msg) = recommend_solver(5000, 25_000, None);
+        assert_eq!(rec, SolverRecommendation::Either);
+    }
+}
+
+
+/// Iterative BiCGSTAB solver with diagonal (Jacobi) preconditioning.
+///
+/// Suitable for large, non-symmetric sparse systems typical of MNA.
+/// Uses left preconditioning with an easily computed diagonal inverse.
+pub struct BiCgStabSolver {
+    /// Cached copy of matrix for matvec operations.
+    a: Option<CscMatrix<Complex<Scalar>>>,
+    /// Inverse of diagonal preconditioner M ≈ diag(A).
+    m_inv_diag: Option<DVector<Complex<Scalar>>>,
+    /// Matrix dimension.
+    n: Option<usize>,
+    /// Maximum iterations.
+    max_iters: usize,
+    /// Relative tolerance on residual norm.
+    tol: Scalar,
+}
+
+impl BiCgStabSolver {
+    /// Creates a new BiCGSTAB solver.
+    pub fn new() -> Self {
+        Self {
+            a: None,
+            m_inv_diag: None,
+            n: None,
+            max_iters: 2000,
+            tol: 1e-8,
+        }
+    }
+
+    /// Sets solver parameters.
+    pub fn with_params(mut self, max_iters: usize, tol: Scalar) -> Self {
+        self.max_iters = max_iters;
+        self.tol = tol;
+        self
+    }
+
+    fn spmv(matrix: &CscMatrix<Complex<Scalar>>, x: &DVector<Complex<Scalar>>) -> DVector<Complex<Scalar>> {
+        let n = matrix.nrows();
+        let mut y = DVector::from_element(n, Complex::new(0.0, 0.0));
+
+        let col_offsets = matrix.col_offsets();
+        let row_indices = matrix.row_indices();
+        let values = matrix.values();
+
+        for j in 0..matrix.ncols() {
+            let start = col_offsets[j];
+            let end = col_offsets[j + 1];
+            let xj = x[j];
+            for idx in start..end {
+                let i = row_indices[idx];
+                y[i] += values[idx] * xj;
+            }
+        }
+        y
+    }
+
+    #[inline]
+    fn apply_preconditioner(m_inv_diag: &DVector<Complex<Scalar>>, r: &DVector<Complex<Scalar>>) -> DVector<Complex<Scalar>> {
+        // Jacobi: z = M^{-1} r, with M = diag(A)
+        let mut z = r.clone();
+        for i in 0..z.len() {
+            z[i] *= m_inv_diag[i];
+        }
+        z
+    }
+
+    #[inline]
+    fn dot_conj(a: &DVector<Complex<Scalar>>, b: &DVector<Complex<Scalar>>) -> Complex<Scalar> {
+        // Conjugate(a)^T b
+        let mut acc = Complex::new(0.0, 0.0);
+        for i in 0..a.len() {
+            acc += a[i].conj() * b[i];
+        }
+        acc
+    }
+}
+
+impl Default for BiCgStabSolver {
+    fn default() -> Self { Self::new() }
+}
+
+impl SparseSolver for BiCgStabSolver {
+    fn symbolic(&mut self, matrix: &CscMatrix<Complex<Scalar>>) -> Result<(), SolverError> {
+        if matrix.nrows() != matrix.ncols() {
+            return Err(SolverError::InvalidMatrix(
+                format!("Matrix must be square: {}x{}", matrix.nrows(), matrix.ncols())
+            ));
+        }
+        self.n = Some(matrix.nrows());
+        self.a = None; // reset
+        self.m_inv_diag = None;
+        Ok(())
+    }
+
+    fn numeric(&mut self, matrix: &CscMatrix<Complex<Scalar>>) -> Result<(), SolverError> {
+        let n = self.n.ok_or_else(|| SolverError::Other("Must call symbolic() before numeric()".into()))?;
+        if matrix.nrows() != n {
+            return Err(SolverError::InvalidMatrix("Matrix dimensions changed since symbolic phase".into()));
+        }
+
+        // Build diagonal inverse for Jacobi preconditioner
+        let mut diag = DVector::from_element(n, Complex::new(0.0, 0.0));
+        let col_offsets = matrix.col_offsets();
+        let row_indices = matrix.row_indices();
+        let values = matrix.values();
+        for j in 0..n {
+            let start = col_offsets[j];
+            let end = col_offsets[j + 1];
+            for idx in start..end {
+                let i = row_indices[idx];
+                if i == j {
+                    diag[i] = values[idx];
+                }
+            }
+        }
+        let mut inv = diag.clone();
+        for i in 0..n {
+            let d = diag[i];
+            if d.norm() < 1e-18 {
+                // Fallback to 1 on zero diagonal to avoid NaNs
+                inv[i] = Complex::new(1.0, 0.0);
+            } else {
+                inv[i] = Complex::new(1.0, 0.0) / d;
+            }
+        }
+        self.m_inv_diag = Some(inv);
+        self.a = Some(matrix.clone());
+        Ok(())
+    }
+
+    fn solve(&self, rhs: &DVector<Complex<Scalar>>) -> Result<DVector<Complex<Scalar>>, SolverError> {
+        let a = self.a.as_ref().ok_or_else(|| SolverError::Other("Must call numeric() before solve()".into()))?;
+        let m_inv = self.m_inv_diag.as_ref().ok_or_else(|| SolverError::Other("Preconditioner not built".into()))?;
+        let n = rhs.len();
+
+        // Initial guess x0 = 0
+        let mut x = DVector::from_element(n, Complex::new(0.0, 0.0));
+        let mut r = rhs - &Self::spmv(a, &x);
+        let r_hat = r.clone();
+        let mut v = DVector::from_element(n, Complex::new(0.0, 0.0));
+        let mut p = DVector::from_element(n, Complex::new(0.0, 0.0));
+
+        let mut rho_prev = Complex::new(1.0, 0.0);
+        let mut alpha = Complex::new(1.0, 0.0);
+        let mut omega = Complex::new(1.0, 0.0);
+
+        let rhs_norm = rhs.norm();
+        let mut r_norm = r.norm();
+        if rhs_norm == 0.0 || r_norm / (rhs_norm + 1e-30) < self.tol {
+            return Ok(x);
+        }
+
+        for _iter in 0..self.max_iters {
+            let rho = Self::dot_conj(&r_hat, &r);
+            if rho.norm() < 1e-30 {
+                return Err(SolverError::NumericalInstability("Breakdown: rho ~ 0".into()));
+            }
+            let beta = (rho / rho_prev) * (alpha / omega);
+            // p = r + beta*(p - omega*v)
+            for i in 0..n {
+                p[i] = r[i] + beta * (p[i] - omega * v[i]);
+            }
+
+            // z = M^{-1} p
+            let z = Self::apply_preconditioner(m_inv, &p);
+            v = Self::spmv(a, &z);
+            let r_hat_v = Self::dot_conj(&r_hat, &v);
+            if r_hat_v.norm() < 1e-30 {
+                return Err(SolverError::NumericalInstability("Breakdown: r_hat·v ~ 0".into()));
+            }
+            alpha = rho / r_hat_v;
+            // s = r - alpha*v
+            let mut s = r.clone();
+            for i in 0..n { s[i] -= alpha * v[i]; }
+            let s_norm = s.norm();
+            if s_norm / (rhs_norm + 1e-30) < self.tol {
+                // x = x + alpha*z
+                for i in 0..n { x[i] += alpha * z[i]; }
+                return Ok(x);
+            }
+            // z_s = M^{-1} s
+            let z_s = Self::apply_preconditioner(m_inv, &s);
+            let t = Self::spmv(a, &z_s);
+            let tt = Self::dot_conj(&t, &t);
+            if tt.norm() < 1e-30 {
+                return Err(SolverError::NumericalInstability("Breakdown: t·t ~ 0".into()));
+            }
+            let omega_new = Self::dot_conj(&t, &s) / tt;
+            // x = x + alpha*z + omega*z_s
+            for i in 0..n { x[i] += alpha * z[i] + omega_new * z_s[i]; }
+            // r = s - omega*t
+            r = s;
+            for i in 0..n { r[i] -= omega_new * t[i]; }
+            r_norm = r.norm();
+            if r_norm / (rhs_norm + 1e-30) < self.tol {
+                return Ok(x);
+            }
+            if omega_new.norm() < 1e-30 {
+                return Err(SolverError::NumericalInstability("Breakdown: omega ~ 0".into()));
+            }
+            rho_prev = rho;
+            omega = omega_new;
+        }
+
+        Err(SolverError::ConvergenceFailure { iterations: self.max_iters, residual_norm: r_norm })
+    }
+
+    fn solve_with_stats(
+        &self,
+        rhs: &DVector<Complex<Scalar>>,
+    ) -> Result<(DVector<Complex<Scalar>>, SolverStats), SolverError> {
+        let start = std::time::Instant::now();
+        let x = self.solve(rhs)?;
+        let solve_time = start.elapsed();
+        Ok((x, SolverStats {
+            success: true,
+            solve_time: Some(solve_time),
+            notes: vec!["BiCGSTAB (Jacobi)".into()],
+            ..Default::default()
+        }))
+    }
+
+    fn name(&self) -> &str { "BiCGSTAB(Jacobi)" }
+
+    fn is_ready(&self) -> bool { self.a.is_some() && self.m_inv_diag.is_some() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

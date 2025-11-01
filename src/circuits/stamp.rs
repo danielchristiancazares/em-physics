@@ -389,6 +389,16 @@ impl MnaBuilder {
         x
     }
 
+    /// Directly adds a value to the system matrix at (i, j).
+    /// Useful for advanced stamps (e.g., N-port coupling) that go beyond
+    /// simple two-node admittance patterns.
+    pub fn add_matrix_entry(&mut self, i: usize, j: usize, value: Complex<Scalar>) {
+        let dim = self.n + self.m;
+        if i < dim && j < dim {
+            self.a[(i, j)] += value;
+        }
+    }
+
     /// Returns (node_count, source_count).
     #[must_use]
     pub fn dimensions(&self) -> (usize, usize) {
@@ -407,8 +417,7 @@ impl MnaBuilder {
         (v, i)
     }
 
-    /// Returns the system matrix and RHS for testing purposes.
-    #[cfg(test)]
+    /// Returns a clone of the system matrix and RHS.
     pub fn system_matrix_and_rhs(&self) -> (DMatrix<Complex<Scalar>>, DVector<Complex<Scalar>>) {
         (self.a.clone(), self.b.clone())
     }
