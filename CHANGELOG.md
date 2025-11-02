@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+### Added
+- Iterative sparse solver: BiCGSTAB with Jacobi preconditioning (feature `sparse`).
+- N-port support: Touchstone sNp import and Y-stamping for AC analysis.
+- SPICE netlist importer for linear elements (R/C/L/V/I) with AC/DC parsing.
+- IO scaffolding: VTK ASCII export and HDF5 writers (feature-gated).
+- Solver selection utilities: `SolverRecommendation` and `recommend_solver`.
+
+### Changed
+- Transient engine: reuse LU factorization across time steps for speedups on fixed-topology simulations.
+
 ## [0.2.0] - 2025-10-31
 ### Added
 - **Sparse MNA solver** (`sparse` feature): High-performance sparse Modified Nodal Analysis with automatic symbolic factorization reuse for AC sweeps, reducing computation time by 2-10× for frequency sweeps.

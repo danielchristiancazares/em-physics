@@ -3,7 +3,7 @@
 //! Provides utilities to parse Touchstone files and stamp N-port admittance
 //! models into MNA systems for AC analysis.
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 use num_complex::Complex;
 
 use crate::math::Scalar;
@@ -45,7 +45,7 @@ impl NPortNetwork {
         let i = DMatrix::<Complex<Scalar>>::identity(n, n);
         let inv = (i.clone() + s).try_inverse().unwrap_or_else(|| {
             // Fallback: pseudo-inverse via LU if singular
-            (i.clone() + s).lu().inverse().unwrap_or(DMatrix::zeros(n, n))
+            (i.clone() + s).lu().try_inverse().unwrap_or(DMatrix::zeros(n, n))
         });
         let factor = Complex::new(1.0 / self.z0, 0.0);
         (i - s) * inv * factor
