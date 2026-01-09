@@ -10,16 +10,16 @@ fn main() {
     net.add_component(Capacitor::new("C1", 1e-9)); // 1 nF
 
     // Sweep 1 MHz .. 100 MHz (log-spaced-ish quick demo)
-    let freqs = [
-        1.0e6_f64, 2.0e6, 5.0e6, 1.0e7, 2.0e7, 5.0e7, 1.0e8,
-    ];
+    let freqs = [1.0e6_f64, 2.0e6, 5.0e6, 1.0e7, 2.0e7, 5.0e7, 1.0e8];
     let omegas = freqs.into_iter().map(angular_frequency);
 
     let data = em_physics::circuits::analysis::sweep_network_impedance(&net, omegas);
 
     println!("omega(rad/s), Z_real(ohm), Z_imag(ohm)");
     for p in data {
-        println!("{:.6e}, {:.6e}, {:.6e}", p.omega, p.impedance.re, p.impedance.im);
+        println!(
+            "{:.6e}, {:.6e}, {:.6e}",
+            p.omega, p.impedance.re, p.impedance.im
+        );
     }
 }
-

@@ -210,12 +210,7 @@ impl MnaBuilder {
 
     /// Adds an independent voltage source between `pos` and `neg` with voltage `v` (complex for AC).
     /// Returns the index of the source current variable.
-    pub fn stamp_voltage_source(
-        &mut self,
-        pos: Node,
-        neg: Node,
-        v: Complex<Scalar>,
-    ) -> usize {
+    pub fn stamp_voltage_source(&mut self, pos: Node, neg: Node, v: Complex<Scalar>) -> usize {
         let k = self.m; // new source index
         self.ensure_capacity(k + 1);
         let row = self.k_idx(k);
@@ -413,7 +408,11 @@ impl MnaBuilder {
     ) -> (DVector<Complex<Scalar>>, DVector<Complex<Scalar>>) {
         let (n, m) = (self.n, self.m);
         let v = x.rows(0, n).into_owned();
-        let i = if m > 0 { x.rows(n, m).into_owned() } else { DVector::zeros(0) };
+        let i = if m > 0 {
+            x.rows(n, m).into_owned()
+        } else {
+            DVector::zeros(0)
+        };
         (v, i)
     }
 

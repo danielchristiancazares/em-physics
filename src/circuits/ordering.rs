@@ -23,7 +23,7 @@
 
 use nalgebra_sparse::CscMatrix;
 use num_complex::Complex;
-use std::collections::{VecDeque, HashSet};
+use std::collections::{HashSet, VecDeque};
 
 use crate::math::Scalar;
 
@@ -286,12 +286,8 @@ pub fn apply_ordering(
     let n = matrix.nrows();
 
     let (perm, actual_strategy) = match strategy {
-        OrderingStrategy::Natural => {
-            ((0..n).collect(), OrderingStrategy::Natural)
-        }
-        OrderingStrategy::RCM => {
-            (rcm_ordering(matrix), OrderingStrategy::RCM)
-        }
+        OrderingStrategy::Natural => ((0..n).collect(), OrderingStrategy::Natural),
+        OrderingStrategy::RCM => (rcm_ordering(matrix), OrderingStrategy::RCM),
         OrderingStrategy::AMD => {
             // AMD not yet implemented (requires SuiteSparse or complex pure-Rust implementation)
             // Fall back to RCM
@@ -322,10 +318,10 @@ mod tests {
         for i in 0..n {
             coo.push(i, i, Complex::new(2.0, 0.0));
             if i > 0 {
-                coo.push(i, i-1, Complex::new(-1.0, 0.0));
+                coo.push(i, i - 1, Complex::new(-1.0, 0.0));
             }
             if i < n - 1 {
-                coo.push(i, i+1, Complex::new(-1.0, 0.0));
+                coo.push(i, i + 1, Complex::new(-1.0, 0.0));
             }
         }
 
@@ -340,7 +336,10 @@ mod tests {
         let rcm_bw = compute_bandwidth(&matrix, &rcm_perm);
 
         assert_eq!(rcm_perm.len(), n);
-        assert!(rcm_bw <= natural_bw + 1, "RCM should not increase bandwidth significantly");
+        assert!(
+            rcm_bw <= natural_bw + 1,
+            "RCM should not increase bandwidth significantly"
+        );
     }
 
     #[test]

@@ -160,14 +160,28 @@ pub struct Switch {
 impl Switch {
     /// Creates a switch with specified on/off resistances.
     #[must_use]
-    pub fn new(name: impl Into<String>, on_resistance: Scalar, off_resistance: Scalar, closed: bool) -> Self {
-        Self { name: name.into(), on_resistance, off_resistance, closed }
+    pub fn new(
+        name: impl Into<String>,
+        on_resistance: Scalar,
+        off_resistance: Scalar,
+        closed: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            on_resistance,
+            off_resistance,
+            closed,
+        }
     }
 
     /// Effective resistance in the current state.
     #[must_use]
     pub fn effective_resistance(&self) -> Scalar {
-        if self.closed { self.on_resistance } else { self.off_resistance }
+        if self.closed {
+            self.on_resistance
+        } else {
+            self.off_resistance
+        }
     }
 }
 

@@ -3,13 +3,13 @@
 #![cfg(feature = "sparse")]
 
 use nalgebra::DVector;
-use nalgebra_sparse::{coo::CooMatrix, CscMatrix};
+use nalgebra_sparse::{CscMatrix, coo::CooMatrix};
 use num_complex::Complex;
 
 use crate::math::Scalar;
 
+use super::solver::{BaselineLuSolver, SparseSolver};
 use super::stamp::{AcContext, SolveReport};
-use super::solver::{SparseSolver, BaselineLuSolver};
 
 /// Node index type: None represents ground, Some(i) is the i-th node.
 pub type Node = Option<usize>;
@@ -194,12 +194,7 @@ impl SparseMnaBuilder {
     /// Returns the index k of the new current variable.
     ///
     /// The voltage constraint is: V(pos) - V(neg) = v
-    pub fn stamp_voltage_source(
-        &mut self,
-        pos: Node,
-        neg: Node,
-        v: Complex<Scalar>,
-    ) -> usize {
+    pub fn stamp_voltage_source(&mut self, pos: Node, neg: Node, v: Complex<Scalar>) -> usize {
         let k = self.m;
         self.ensure_capacity(k + 1);
         let row = self.k_idx(k);
@@ -234,14 +229,14 @@ impl SparseMnaBuilder {
                 self.add(o, c, -g); // Move to LHS: -g*V(cp)
             }
             if let Some(c) = Self::node_index(cn) {
-                self.add(o, c, g);  // Move to LHS: +g*V(cn)
+                self.add(o, c, g); // Move to LHS: +g*V(cn)
             }
         }
 
         // Current out of output negative node: -g*(V(cp) - V(cn))
         if let Some(o) = Self::node_index(on) {
             if let Some(c) = Self::node_index(cp) {
-                self.add(o, c, g);  // Move to LHS: +g*V(cp)
+                self.add(o, c, g); // Move to LHS: +g*V(cp)
             }
             if let Some(c) = Self::node_index(cn) {
                 self.add(o, c, -g); // Move to LHS: -g*V(cn)
@@ -445,16 +440,18 @@ impl SparseMnaBuilder {
                 report.cond_estimate = stats.condition_estimate;
 
                 if !report.floating_nodes.is_empty() {
-                    report.notes.push(
-                        format!("Warning: {} floating node(s) detected", report.floating_nodes.len())
-                    );
+                    report.notes.push(format!(
+                        "Warning: {} floating node(s) detected",
+                        report.floating_nodes.len()
+                    ));
                 }
 
                 if let Some(cond) = report.cond_estimate {
                     if cond > 1e12 {
-                        report.notes.push(
-                            format!("Warning: ill-conditioned matrix (cond ≈ {:.2e})", cond)
-                        );
+                        report.notes.push(format!(
+                            "Warning: ill-conditioned matrix (cond ≈ {:.2e})",
+                            cond
+                        ));
                     }
                 }
 
@@ -512,16 +509,8 @@ mod tests {
             for j in 0..sparse_dense.ncols() {
                 let sparse_val = sparse_dense[(i, j)];
                 let dense_val = dense[(i, j)];
-                assert_relative_eq!(
-                    sparse_val.re,
-                    dense_val.re,
-                    epsilon = epsilon
-                );
-                assert_relative_eq!(
-                    sparse_val.im,
-                    dense_val.im,
-                    epsilon = epsilon
-                );
+                assert_relative_eq!(sparse_val.re, dense_val.re, epsilon = epsilon);
+                assert_relative_eq!(sparse_val.im, dense_val.im, epsilon = epsilon);
             }
         }
     }
@@ -534,16 +523,8 @@ mod tests {
     ) {
         assert_eq!(sparse_rhs.len(), dense_rhs.len(), "RHS length mismatch");
         for i in 0..sparse_rhs.len() {
-            assert_relative_eq!(
-                sparse_rhs[i].re,
-                dense_rhs[i].re,
-                epsilon = epsilon
-            );
-            assert_relative_eq!(
-                sparse_rhs[i].im,
-                dense_rhs[i].im,
-                epsilon = epsilon
-            );
+            assert_relative_eq!(sparse_rhs[i].re, dense_rhs[i].re, epsilon = epsilon);
+            assert_relative_eq!(sparse_rhs[i].im, dense_rhs[i].im, epsilon = epsilon);
         }
     }
 
@@ -587,8 +568,8 @@ mod tests {
         // Dense version
         let mut dense = MnaBuilder::new(n);
         dense.stamp_capacitor(Some(0), Some(1), 1e-6, ctx); // 1 µF
-        dense.stamp_capacitor(Some(1), None, 2e-6, ctx);    // 2 µF
-        dense.stamp_resistor(Some(0), None, 1000.0);        // 1 kΩ
+        dense.stamp_capacitor(Some(1), None, 2e-6, ctx); // 2 µF
+        dense.stamp_resistor(Some(0), None, 1000.0); // 1 kΩ
         dense.stamp_current_source(Some(0), None, Complex::new(1.0, 0.0));
 
         // Sparse version
@@ -617,7 +598,7 @@ mod tests {
         // Dense version
         let mut dense = MnaBuilder::new(n);
         dense.stamp_inductor(Some(0), Some(1), 1e-3, ctx); // 1 mH
-        dense.stamp_resistor(Some(1), None, 100.0);         // 100 Ω
+        dense.stamp_resistor(Some(1), None, 100.0); // 100 Ω
         dense.stamp_current_source(Some(0), None, Complex::new(0.5, 0.0));
 
         // Sparse version
@@ -658,7 +639,11 @@ mod tests {
         let (sparse_csc, sparse_b) = sparse.finalize();
         let sparse_a = csc_to_dense(&sparse_csc);
 
-        assert_eq!(sparse_a.nrows(), dense_a.nrows(), "Matrix size should match including extra variable");
+        assert_eq!(
+            sparse_a.nrows(),
+            dense_a.nrows(),
+            "Matrix size should match including extra variable"
+        );
         assert_matrices_equal(&sparse_a, &dense_a, 1e-12);
         assert_vectors_equal(&sparse_b, &dense_b, 1e-12);
     }
@@ -904,7 +889,10 @@ mod tests {
 
             // Floating node causes singular matrix, so solve might fail
             // The important part is that we detect the floating node
-            assert!(!report.floating_nodes.is_empty(), "Should detect floating node 1");
+            assert!(
+                !report.floating_nodes.is_empty(),
+                "Should detect floating node 1"
+            );
             assert!(report.floating_nodes.contains(&1));
         }
 
@@ -916,35 +904,36 @@ mod tests {
             let ctx = AcContext { omega };
 
             // Build both versions
-            let build_circuit = |is_sparse: bool| -> (DVector<Complex<Scalar>>, DVector<Complex<Scalar>>) {
-                if is_sparse {
-                    let mut mna = SparseMnaBuilder::new(n, 40);
-                    let k = mna.stamp_voltage_source(Some(0), None, Complex::new(5.0, 0.0));
-                    mna.stamp_resistor(Some(0), Some(1), 50.0);
-                    mna.stamp_capacitor(Some(1), None, 100e-12, ctx);
-                    mna.stamp_inductor(Some(1), Some(2), 10e-9, ctx);
-                    mna.stamp_resistor(Some(2), None, 75.0);
-                    mna.stamp_capacitor(Some(2), Some(3), 47e-12, ctx);
-                    mna.stamp_resistor(Some(3), None, 100.0);
-                    mna.stamp_cccs(Some(3), None, k, 0.5);
+            let build_circuit =
+                |is_sparse: bool| -> (DVector<Complex<Scalar>>, DVector<Complex<Scalar>>) {
+                    if is_sparse {
+                        let mut mna = SparseMnaBuilder::new(n, 40);
+                        let k = mna.stamp_voltage_source(Some(0), None, Complex::new(5.0, 0.0));
+                        mna.stamp_resistor(Some(0), Some(1), 50.0);
+                        mna.stamp_capacitor(Some(1), None, 100e-12, ctx);
+                        mna.stamp_inductor(Some(1), Some(2), 10e-9, ctx);
+                        mna.stamp_resistor(Some(2), None, 75.0);
+                        mna.stamp_capacitor(Some(2), Some(3), 47e-12, ctx);
+                        mna.stamp_resistor(Some(3), None, 100.0);
+                        mna.stamp_cccs(Some(3), None, k, 0.5);
 
-                    let sol = mna.solve().expect("sparse solve");
-                    mna.split_solution(sol)
-                } else {
-                    let mut mna = MnaBuilder::new(n);
-                    let k = mna.stamp_voltage_source(Some(0), None, Complex::new(5.0, 0.0));
-                    mna.stamp_resistor(Some(0), Some(1), 50.0);
-                    mna.stamp_capacitor(Some(1), None, 100e-12, ctx);
-                    mna.stamp_inductor(Some(1), Some(2), 10e-9, ctx);
-                    mna.stamp_resistor(Some(2), None, 75.0);
-                    mna.stamp_capacitor(Some(2), Some(3), 47e-12, ctx);
-                    mna.stamp_resistor(Some(3), None, 100.0);
-                    mna.stamp_cccs(Some(3), None, k, 0.5);
+                        let sol = mna.solve().expect("sparse solve");
+                        mna.split_solution(sol)
+                    } else {
+                        let mut mna = MnaBuilder::new(n);
+                        let k = mna.stamp_voltage_source(Some(0), None, Complex::new(5.0, 0.0));
+                        mna.stamp_resistor(Some(0), Some(1), 50.0);
+                        mna.stamp_capacitor(Some(1), None, 100e-12, ctx);
+                        mna.stamp_inductor(Some(1), Some(2), 10e-9, ctx);
+                        mna.stamp_resistor(Some(2), None, 75.0);
+                        mna.stamp_capacitor(Some(2), Some(3), 47e-12, ctx);
+                        mna.stamp_resistor(Some(3), None, 100.0);
+                        mna.stamp_cccs(Some(3), None, k, 0.5);
 
-                    let sol = mna.solve().expect("dense solve");
-                    mna.split_solution(sol)
-                }
-            };
+                        let sol = mna.solve().expect("dense solve");
+                        mna.split_solution(sol)
+                    }
+                };
 
             let (sparse_v, sparse_i) = build_circuit(true);
             let (dense_v, dense_i) = build_circuit(false);
@@ -997,9 +986,8 @@ mod tests {
 
             // Verify attenuation increases through ladder
             let mag0 = sparse_v[0].norm();
-            let mag_last = sparse_v[n-1].norm();
+            let mag_last = sparse_v[n - 1].norm();
             assert!(mag_last < mag0, "Output should be attenuated");
         }
     }
 }
-

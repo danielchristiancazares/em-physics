@@ -1,13 +1,13 @@
 use nalgebra::{DMatrix, DVector};
 use num_complex::Complex;
 
-use crate::math::Scalar;
 use crate::circuits::stamp::{MnaBuilder, SolveReport};
+use crate::math::Scalar;
 
 #[cfg(feature = "sparse")]
-use crate::circuits::sparse::SparseMnaBuilder;
+use crate::circuits::solver::{BaselineLuSolver, SparseSolver};
 #[cfg(feature = "sparse")]
-use crate::circuits::solver::{SparseSolver, BaselineLuSolver};
+use crate::circuits::sparse::SparseMnaBuilder;
 
 /// Dense admittance matrix used in nodal analysis.
 pub type AdmittanceMatrix = DMatrix<Complex<Scalar>>;
@@ -99,7 +99,12 @@ where
         let (x, report) = mna.solve_with_report();
         if let Some(x) = x {
             let (v, i) = mna.split_solution(x);
-            out.push(AcPointMna { omega: w, voltages: v, source_currents: i, report });
+            out.push(AcPointMna {
+                omega: w,
+                voltages: v,
+                source_currents: i,
+                report,
+            });
         } else {
             out.push(AcPointMna {
                 omega: w,
@@ -119,18 +124,34 @@ use std::io::Write;
 pub fn write_frequency_points_csv<W: Write>(mut w: W, points: &[FrequencyPoint]) -> io::Result<()> {
     writeln!(w, "omega,ReZ,ImZ")?;
     for p in points {
-        writeln!(w, "{:.16e},{:.16e},{:.16e}", p.omega, p.impedance.re, p.impedance.im)?;
+        writeln!(
+            w,
+            "{:.16e},{:.16e},{:.16e}",
+            p.omega, p.impedance.re, p.impedance.im
+        )?;
     }
     Ok(())
 }
 
 /// Writes a CSV of node voltage at `node_index` across an AC MNA sweep.
-pub fn write_ac_points_mna_node_csv<W: Write>(mut w: W, data: &[AcPointMna], node_index: usize) -> io::Result<()> {
+pub fn write_ac_points_mna_node_csv<W: Write>(
+    mut w: W,
+    data: &[AcPointMna],
+    node_index: usize,
+) -> io::Result<()> {
     writeln!(w, "omega,ReV,ImV,cond_estimate,success")?;
     for p in data {
-        let v = if node_index < p.voltages.len() { p.voltages[node_index] } else { Complex::new(0.0, 0.0) };
+        let v = if node_index < p.voltages.len() {
+            p.voltages[node_index]
+        } else {
+            Complex::new(0.0, 0.0)
+        };
         let cond = p.report.cond_estimate.unwrap_or(f64::NAN);
-        writeln!(w, "{:.16e},{:.16e},{:.16e},{:.6e},{}", p.omega, v.re, v.im, cond, p.report.success)?;
+        writeln!(
+            w,
+            "{:.16e},{:.16e},{:.16e},{:.6e},{}",
+            p.omega, v.re, v.im, cond, p.report.success
+        )?;
     }
     Ok(())
 }
@@ -231,35 +252,33 @@ where
 
     // Process first frequency (already have matrix)
     match solver.numeric(&first_matrix) {
-        Ok(()) => {
-            match solver.solve_with_stats(&first_rhs) {
-                Ok((solution, stats)) => {
-                    let (voltages, currents) = first_mna.split_solution(solution);
-                    out.push(AcPointMna {
-                        omega: omegas[0],
-                        voltages,
-                        source_currents: currents,
-                        report: SolveReport {
-                            success: true,
-                            cond_estimate: stats.condition_estimate,
-                            ..Default::default()
-                        },
-                    });
-                }
-                Err(e) => {
-                    out.push(AcPointMna {
-                        omega: omegas[0],
-                        voltages: DVector::zeros(node_count),
-                        source_currents: DVector::zeros(first_mna.dimensions().1),
-                        report: SolveReport {
-                            success: false,
-                            notes: vec![format!("Solve failed: {}", e)],
-                            ..Default::default()
-                        },
-                    });
-                }
+        Ok(()) => match solver.solve_with_stats(&first_rhs) {
+            Ok((solution, stats)) => {
+                let (voltages, currents) = first_mna.split_solution(solution);
+                out.push(AcPointMna {
+                    omega: omegas[0],
+                    voltages,
+                    source_currents: currents,
+                    report: SolveReport {
+                        success: true,
+                        cond_estimate: stats.condition_estimate,
+                        ..Default::default()
+                    },
+                });
             }
-        }
+            Err(e) => {
+                out.push(AcPointMna {
+                    omega: omegas[0],
+                    voltages: DVector::zeros(node_count),
+                    source_currents: DVector::zeros(first_mna.dimensions().1),
+                    report: SolveReport {
+                        success: false,
+                        notes: vec![format!("Solve failed: {}", e)],
+                        ..Default::default()
+                    },
+                });
+            }
+        },
         Err(e) => {
             out.push(AcPointMna {
                 omega: omegas[0],
@@ -282,41 +301,41 @@ where
 
         // Only numeric factorization needed (symbolic pattern already analyzed)
         match solver.numeric(&matrix) {
-            Ok(()) => {
-                match solver.solve_with_stats(&rhs) {
-                    Ok((solution, stats)) => {
-                        let (voltages, currents) = mna.split_solution(solution);
-                        out.push(AcPointMna {
-                            omega,
-                            voltages,
-                            source_currents: currents,
-                            report: SolveReport {
-                                success: true,
-                                cond_estimate: stats.condition_estimate,
-                                notes: if stats.condition_estimate.map_or(false, |c| c > 1e12) {
-                                    vec![format!("Ill-conditioned matrix (cond ≈ {:.2e})",
-                                                stats.condition_estimate.unwrap())]
-                                } else {
-                                    vec![]
-                                },
-                                ..Default::default()
+            Ok(()) => match solver.solve_with_stats(&rhs) {
+                Ok((solution, stats)) => {
+                    let (voltages, currents) = mna.split_solution(solution);
+                    out.push(AcPointMna {
+                        omega,
+                        voltages,
+                        source_currents: currents,
+                        report: SolveReport {
+                            success: true,
+                            cond_estimate: stats.condition_estimate,
+                            notes: if stats.condition_estimate.map_or(false, |c| c > 1e12) {
+                                vec![format!(
+                                    "Ill-conditioned matrix (cond ≈ {:.2e})",
+                                    stats.condition_estimate.unwrap()
+                                )]
+                            } else {
+                                vec![]
                             },
-                        });
-                    }
-                    Err(e) => {
-                        out.push(AcPointMna {
-                            omega,
-                            voltages: DVector::zeros(node_count),
-                            source_currents: DVector::zeros(mna.dimensions().1),
-                            report: SolveReport {
-                                success: false,
-                                notes: vec![format!("Solve failed: {}", e)],
-                                ..Default::default()
-                            },
-                        });
-                    }
+                            ..Default::default()
+                        },
+                    });
                 }
-            }
+                Err(e) => {
+                    out.push(AcPointMna {
+                        omega,
+                        voltages: DVector::zeros(node_count),
+                        source_currents: DVector::zeros(mna.dimensions().1),
+                        report: SolveReport {
+                            success: false,
+                            notes: vec![format!("Solve failed: {}", e)],
+                            ..Default::default()
+                        },
+                    });
+                }
+            },
             Err(e) => {
                 out.push(AcPointMna {
                     omega,
@@ -372,7 +391,12 @@ mod tests {
         let pts = ac_sweep_mna(1, omegas, |w, mna| {
             mna.stamp_current_source(Some(0), None, Complex::new(1.0, 0.0));
             mna.stamp_resistor(Some(0), None, r);
-            mna.stamp_capacitor(Some(0), None, c, crate::circuits::stamp::AcContext { omega: w });
+            mna.stamp_capacitor(
+                Some(0),
+                None,
+                c,
+                crate::circuits::stamp::AcContext { omega: w },
+            );
         });
         assert_eq!(pts.len(), 2);
         let v_dc = pts[0].voltages[0];

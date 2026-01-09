@@ -90,7 +90,10 @@ pub fn phase_rad(values: impl IntoIterator<Item = Complex<Scalar>>) -> Vec<Scala
 /// Phase in degrees of complex sequence.
 #[must_use]
 pub fn phase_deg(values: impl IntoIterator<Item = Complex<Scalar>>) -> Vec<Scalar> {
-    phase_rad(values).into_iter().map(|r| r.to_degrees()).collect()
+    phase_rad(values)
+        .into_iter()
+        .map(|r| r.to_degrees())
+        .collect()
 }
 
 #[cfg(test)]

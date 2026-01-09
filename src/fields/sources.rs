@@ -37,7 +37,12 @@ pub struct LineCurrent {
 /// Calculates magnetic flux density B (tesla) at `point` due to a single straight segment
 /// with current `I`, via midpoint quadrature with `samples` subdivisions.
 #[must_use]
-pub fn magnetic_field_segment(point: R3, segment: &WireSegment3D, current: CScalar, samples: usize) -> C3 {
+pub fn magnetic_field_segment(
+    point: R3,
+    segment: &WireSegment3D,
+    current: CScalar,
+    samples: usize,
+) -> C3 {
     let dl = (segment.end - segment.start) / samples as Scalar;
     let mu = VACUUM_PERMEABILITY;
     let coeff = CScalar::new(mu / (4.0 * std::f64::consts::PI), 0.0) * current;
@@ -58,7 +63,11 @@ pub fn magnetic_field_segment(point: R3, segment: &WireSegment3D, current: CScal
 /// Closed-form magnetic flux density for a finite straight segment if well-conditioned.
 /// Falls back to zero if the perpendicular distance is too small (caller can retry numerically).
 #[must_use]
-pub fn magnetic_field_segment_closed_form(point: R3, segment: &WireSegment3D, current: CScalar) -> Option<C3> {
+pub fn magnetic_field_segment_closed_form(
+    point: R3,
+    segment: &WireSegment3D,
+    current: CScalar,
+) -> Option<C3> {
     let v = segment.end - segment.start;
     let len = v.norm();
     if len <= Scalar::EPSILON {
@@ -92,7 +101,12 @@ pub fn magnetic_field_segment_closed_form(point: R3, segment: &WireSegment3D, cu
 /// Calculates vector potential A (weber per meter) at `point` due to a single segment
 /// using midpoint quadrature with `samples` subdivisions: A = μ0 I / (4π) ∫ dl / r.
 #[must_use]
-pub fn vector_potential_segment(point: R3, segment: &WireSegment3D, current: CScalar, samples: usize) -> C3 {
+pub fn vector_potential_segment(
+    point: R3,
+    segment: &WireSegment3D,
+    current: CScalar,
+    samples: usize,
+) -> C3 {
     let dl = (segment.end - segment.start) / samples as Scalar;
     let mu = VACUUM_PERMEABILITY;
     let coeff = CScalar::new(mu / (4.0 * std::f64::consts::PI), 0.0) * current;
@@ -180,7 +194,10 @@ mod tests {
             start: R3::new(0.0, 0.0, -5.0),
             end: R3::new(0.0, 0.0, 5.0),
         };
-        let lines = [LineCurrent { segment: seg, current: CScalar::new(1.0, 0.0) }];
+        let lines = [LineCurrent {
+            segment: seg,
+            current: CScalar::new(1.0, 0.0),
+        }];
         // Observation point at radius rho = 0.1 m from axis, z=0.
         let p = R3::new(0.1, 0.0, 0.0);
         let b = magnetic_field_from_lines(p, &lines);
@@ -208,7 +225,11 @@ mod tests {
 
     #[test]
     fn e_field_from_a_scales_with_frequency() {
-        let a = C3::new(CScalar::new(1.0, 0.0), CScalar::new(0.0, 0.0), CScalar::new(0.0, 0.0));
+        let a = C3::new(
+            CScalar::new(1.0, 0.0),
+            CScalar::new(0.0, 0.0),
+            CScalar::new(0.0, 0.0),
+        );
         let e = electric_field_from_vector_potential(a, 2.0);
         assert_relative_eq!(e[0].im, -2.0, epsilon = 1e-12);
     }

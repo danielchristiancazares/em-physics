@@ -26,8 +26,8 @@ use nalgebra_sparse::CscMatrix;
 use num_complex::Complex;
 use std::cell::Cell;
 
+use super::solver::{SolverError, SolverStats, SparseSolver};
 use crate::math::Scalar;
-use super::solver::{SparseSolver, SolverError, SolverStats};
 
 /// Convergence criteria for iterative solvers.
 #[derive(Debug, Clone, Copy)]
@@ -59,7 +59,10 @@ impl ConvergenceCriteria {
 }
 
 /// Matrix-vector product helper for CSC sparse matrices with complex values.
-fn matvec(matrix: &CscMatrix<Complex<Scalar>>, x: &DVector<Complex<Scalar>>) -> DVector<Complex<Scalar>> {
+fn matvec(
+    matrix: &CscMatrix<Complex<Scalar>>,
+    x: &DVector<Complex<Scalar>>,
+) -> DVector<Complex<Scalar>> {
     let mut y = DVector::zeros(matrix.nrows());
 
     // Use triplet iterator to compute y = Ax
@@ -211,10 +214,14 @@ impl Ilu0Preconditioner {
     }
 
     /// Solves Lz = r for z (forward substitution).
-    fn solve_l(&self, r: &DVector<Complex<Scalar>>) -> Result<DVector<Complex<Scalar>>, SolverError> {
-        let l = self.l.as_ref().ok_or_else(|| {
-            SolverError::Other("Must call factorize() first".into())
-        })?;
+    fn solve_l(
+        &self,
+        r: &DVector<Complex<Scalar>>,
+    ) -> Result<DVector<Complex<Scalar>>, SolverError> {
+        let l = self
+            .l
+            .as_ref()
+            .ok_or_else(|| SolverError::Other("Must call factorize() first".into()))?;
 
         let mut z = r.clone();
 
@@ -233,10 +240,14 @@ impl Ilu0Preconditioner {
     }
 
     /// Solves Uz = r for z (backward substitution).
-    fn solve_u(&self, r: &DVector<Complex<Scalar>>) -> Result<DVector<Complex<Scalar>>, SolverError> {
-        let u = self.u.as_ref().ok_or_else(|| {
-            SolverError::Other("Must call factorize() first".into())
-        })?;
+    fn solve_u(
+        &self,
+        r: &DVector<Complex<Scalar>>,
+    ) -> Result<DVector<Complex<Scalar>>, SolverError> {
+        let u = self
+            .u
+            .as_ref()
+            .ok_or_else(|| SolverError::Other("Must call factorize() first".into()))?;
 
         let mut z = r.clone();
 
@@ -268,7 +279,10 @@ impl Ilu0Preconditioner {
     /// This is equivalent to solving LUz = r via:
     /// 1. Solve Ly = r (forward substitution)
     /// 2. Solve Uz = y (backward substitution)
-    pub fn apply(&self, r: &DVector<Complex<Scalar>>) -> Result<DVector<Complex<Scalar>>, SolverError> {
+    pub fn apply(
+        &self,
+        r: &DVector<Complex<Scalar>>,
+    ) -> Result<DVector<Complex<Scalar>>, SolverError> {
         let y = self.solve_l(r)?;
         self.solve_u(&y)
     }
@@ -398,7 +412,7 @@ impl BiCGSTAB {
 
             if rho_new.norm() < 1e-30 {
                 return Err(SolverError::NumericalInstability(
-                    "BiCGSTAB breakdown: rho too small".into()
+                    "BiCGSTAB breakdown: rho too small".into(),
                 ));
             }
 
@@ -417,7 +431,7 @@ impl BiCGSTAB {
             let rtilde_v = complex_dot(&r_tilde, &v);
             if rtilde_v.norm() < 1e-30 {
                 return Err(SolverError::NumericalInstability(
-                    "BiCGSTAB breakdown: (r̃,v) too small".into()
+                    "BiCGSTAB breakdown: (r̃,v) too small".into(),
                 ));
             }
             alpha = rho / rtilde_v;
@@ -443,7 +457,7 @@ impl BiCGSTAB {
 
             if t_t.norm() < 1e-30 {
                 return Err(SolverError::NumericalInstability(
-                    "BiCGSTAB breakdown: (t,t) too small".into()
+                    "BiCGSTAB breakdown: (t,t) too small".into(),
                 ));
             }
             omega = t_s / t_t;
@@ -465,7 +479,7 @@ impl BiCGSTAB {
             // Check for stagnation
             if omega.norm() < 1e-30 {
                 return Err(SolverError::NumericalInstability(
-                    "BiCGSTAB breakdown: omega too small".into()
+                    "BiCGSTAB breakdown: omega too small".into(),
                 ));
             }
         }
@@ -484,9 +498,11 @@ impl BiCGSTAB {
 impl SparseSolver for BiCGSTAB {
     fn symbolic(&mut self, matrix: &CscMatrix<Complex<Scalar>>) -> Result<(), SolverError> {
         if matrix.nrows() != matrix.ncols() {
-            return Err(SolverError::InvalidMatrix(
-                format!("Matrix must be square: {}x{}", matrix.nrows(), matrix.ncols())
-            ));
+            return Err(SolverError::InvalidMatrix(format!(
+                "Matrix must be square: {}x{}",
+                matrix.nrows(),
+                matrix.ncols()
+            )));
         }
 
         self.dimension = Some(matrix.nrows());
@@ -497,13 +513,13 @@ impl SparseSolver for BiCGSTAB {
     }
 
     fn numeric(&mut self, matrix: &CscMatrix<Complex<Scalar>>) -> Result<(), SolverError> {
-        let dim = self.dimension.ok_or_else(|| {
-            SolverError::Other("Must call symbolic() before numeric()".into())
-        })?;
+        let dim = self
+            .dimension
+            .ok_or_else(|| SolverError::Other("Must call symbolic() before numeric()".into()))?;
 
         if matrix.nrows() != dim {
             return Err(SolverError::InvalidMatrix(
-                "Matrix dimensions changed since symbolic phase".into()
+                "Matrix dimensions changed since symbolic phase".into(),
             ));
         }
 
@@ -513,15 +529,21 @@ impl SparseSolver for BiCGSTAB {
         Ok(())
     }
 
-    fn solve(&self, rhs: &DVector<Complex<Scalar>>) -> Result<DVector<Complex<Scalar>>, SolverError> {
-        let matrix = self.matrix.as_ref().ok_or_else(|| {
-            SolverError::Other("Must call numeric() before solve()".into())
-        })?;
+    fn solve(
+        &self,
+        rhs: &DVector<Complex<Scalar>>,
+    ) -> Result<DVector<Complex<Scalar>>, SolverError> {
+        let matrix = self
+            .matrix
+            .as_ref()
+            .ok_or_else(|| SolverError::Other("Must call numeric() before solve()".into()))?;
 
         if rhs.len() != matrix.nrows() {
-            return Err(SolverError::InvalidMatrix(
-                format!("RHS size {} doesn't match matrix size {}", rhs.len(), matrix.nrows())
-            ));
+            return Err(SolverError::InvalidMatrix(format!(
+                "RHS size {} doesn't match matrix size {}",
+                rhs.len(),
+                matrix.nrows()
+            )));
         }
 
         self.solve_unpreconditioned(matrix, rhs, None)
@@ -541,7 +563,7 @@ impl SparseSolver for BiCGSTAB {
         let stats = SolverStats {
             success: true,
             nnz_matrix: self.nnz.unwrap_or(0),
-            nnz_factor: None, // Iterative methods don't factor
+            nnz_factor: None,         // Iterative methods don't factor
             condition_estimate: None, // Not computed by BiCGSTAB
             symbolic_time: None,
             numeric_time: None,
@@ -550,10 +572,13 @@ impl SparseSolver for BiCGSTAB {
             residual_norm: last_res,
             memory_bytes: Some(
                 // Estimate: 8 vectors of size n
-                8 * self.dimension.unwrap_or(0) * std::mem::size_of::<Complex<Scalar>>()
+                8 * self.dimension.unwrap_or(0) * std::mem::size_of::<Complex<Scalar>>(),
             ),
             notes: vec![
-                format!("BiCGSTAB converged in {} iterations", last_iters.unwrap_or(0)),
+                format!(
+                    "BiCGSTAB converged in {} iterations",
+                    last_iters.unwrap_or(0)
+                ),
                 format!("Final residual: {:.2e}", last_res.unwrap_or(0.0)),
             ],
         };
@@ -808,8 +833,10 @@ impl GMRES {
 
             // Check global convergence
             if self.criteria.is_converged(residual, rhs_norm) {
-                let total_iters = restart_count * self.restart +
-                                 self.restart.min(self.criteria.max_iterations % self.restart);
+                let total_iters = restart_count * self.restart
+                    + self
+                        .restart
+                        .min(self.criteria.max_iterations % self.restart);
                 self.last_iterations.set(Some(total_iters));
                 self.last_residual.set(Some(residual));
                 return Ok(x);
@@ -833,9 +860,11 @@ impl GMRES {
 impl SparseSolver for GMRES {
     fn symbolic(&mut self, matrix: &CscMatrix<Complex<Scalar>>) -> Result<(), SolverError> {
         if matrix.nrows() != matrix.ncols() {
-            return Err(SolverError::InvalidMatrix(
-                format!("Matrix must be square: {}x{}", matrix.nrows(), matrix.ncols())
-            ));
+            return Err(SolverError::InvalidMatrix(format!(
+                "Matrix must be square: {}x{}",
+                matrix.nrows(),
+                matrix.ncols()
+            )));
         }
 
         self.dimension = Some(matrix.nrows());
@@ -846,13 +875,13 @@ impl SparseSolver for GMRES {
     }
 
     fn numeric(&mut self, matrix: &CscMatrix<Complex<Scalar>>) -> Result<(), SolverError> {
-        let dim = self.dimension.ok_or_else(|| {
-            SolverError::Other("Must call symbolic() before numeric()".into())
-        })?;
+        let dim = self
+            .dimension
+            .ok_or_else(|| SolverError::Other("Must call symbolic() before numeric()".into()))?;
 
         if matrix.nrows() != dim {
             return Err(SolverError::InvalidMatrix(
-                "Matrix dimensions changed since symbolic phase".into()
+                "Matrix dimensions changed since symbolic phase".into(),
             ));
         }
 
@@ -860,15 +889,21 @@ impl SparseSolver for GMRES {
         Ok(())
     }
 
-    fn solve(&self, rhs: &DVector<Complex<Scalar>>) -> Result<DVector<Complex<Scalar>>, SolverError> {
-        let matrix = self.matrix.as_ref().ok_or_else(|| {
-            SolverError::Other("Must call numeric() before solve()".into())
-        })?;
+    fn solve(
+        &self,
+        rhs: &DVector<Complex<Scalar>>,
+    ) -> Result<DVector<Complex<Scalar>>, SolverError> {
+        let matrix = self
+            .matrix
+            .as_ref()
+            .ok_or_else(|| SolverError::Other("Must call numeric() before solve()".into()))?;
 
         if rhs.len() != matrix.nrows() {
-            return Err(SolverError::InvalidMatrix(
-                format!("RHS size {} doesn't match matrix size {}", rhs.len(), matrix.nrows())
-            ));
+            return Err(SolverError::InvalidMatrix(format!(
+                "RHS size {} doesn't match matrix size {}",
+                rhs.len(),
+                matrix.nrows()
+            )));
         }
 
         self.solve_gmres(matrix, rhs, None)
@@ -897,11 +932,16 @@ impl SparseSolver for GMRES {
             residual_norm: last_res,
             memory_bytes: Some(
                 // Estimate: m basis vectors + Hessenberg matrix
-                (self.restart + 1) * self.dimension.unwrap_or(0) * std::mem::size_of::<Complex<Scalar>>()
+                (self.restart + 1)
+                    * self.dimension.unwrap_or(0)
+                    * std::mem::size_of::<Complex<Scalar>>(),
             ),
             notes: vec![
-                format!("GMRES({}) converged in {} iterations",
-                       self.restart, last_iters.unwrap_or(0)),
+                format!(
+                    "GMRES({}) converged in {} iterations",
+                    self.restart,
+                    last_iters.unwrap_or(0)
+                ),
                 format!("Final residual: {:.2e}", last_res.unwrap_or(0.0)),
             ],
         };
@@ -981,10 +1021,10 @@ mod tests {
         for i in 0..4 {
             coo.push(i, i, Complex::new(10.0, 0.0)); // Diagonal
             if i > 0 {
-                coo.push(i, i-1, Complex::new(1.0, 0.0)); // Lower
+                coo.push(i, i - 1, Complex::new(1.0, 0.0)); // Lower
             }
             if i < 3 {
-                coo.push(i, i+1, Complex::new(1.0, 0.0)); // Upper
+                coo.push(i, i + 1, Complex::new(1.0, 0.0)); // Upper
             }
         }
         let matrix = CscMatrix::from(&coo);
@@ -1010,7 +1050,11 @@ mod tests {
         }
 
         // Should converge quickly for diagonal dominant matrix
-        assert!(stats.iterations.unwrap() < 50, "Took {} iterations", stats.iterations.unwrap());
+        assert!(
+            stats.iterations.unwrap() < 50,
+            "Took {} iterations",
+            stats.iterations.unwrap()
+        );
     }
 
     #[test]
@@ -1077,10 +1121,10 @@ mod tests {
         for i in 0..4 {
             coo.push(i, i, Complex::new(5.0, 0.5));
             if i > 0 {
-                coo.push(i, i-1, Complex::new(1.0, 0.1));
+                coo.push(i, i - 1, Complex::new(1.0, 0.1));
             }
             if i < 3 {
-                coo.push(i, i+1, Complex::new(-1.0, 0.1));
+                coo.push(i, i + 1, Complex::new(-1.0, 0.1));
             }
         }
         let matrix = CscMatrix::from(&coo);
@@ -1151,15 +1195,19 @@ mod tests {
         for i in 0..5 {
             coo.push(i, i, Complex::new(10.0, 1.0));
             if i > 0 {
-                coo.push(i, i-1, Complex::new(-2.0, -0.2));
+                coo.push(i, i - 1, Complex::new(-2.0, -0.2));
             }
             if i < 4 {
-                coo.push(i, i+1, Complex::new(-3.0, 0.3));
+                coo.push(i, i + 1, Complex::new(-3.0, 0.3));
             }
         }
         let matrix = CscMatrix::from(&coo);
 
-        let rhs = DVector::from_vec((0..5).map(|i| Complex::new((i + 1) as Scalar, 0.0)).collect::<Vec<_>>());
+        let rhs = DVector::from_vec(
+            (0..5)
+                .map(|i| Complex::new((i + 1) as Scalar, 0.0))
+                .collect::<Vec<_>>(),
+        );
 
         // Solve without preconditioning
         let mut solver_noprecond = BiCGSTAB::default_criteria();

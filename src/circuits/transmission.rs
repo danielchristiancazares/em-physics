@@ -71,7 +71,12 @@ impl TransmissionLine {
         // Guard against degenerate shunt
         if shunt.norm() == 0.0 {
             // Acts as pure series; approximate extremely large Zc
-            return TwoPort::from_abcd(C::new(1.0, 0.0), C::new(series.re * self.length_m, series.im * self.length_m), C::new(0.0, 0.0), C::new(1.0, 0.0));
+            return TwoPort::from_abcd(
+                C::new(1.0, 0.0),
+                C::new(series.re * self.length_m, series.im * self.length_m),
+                C::new(0.0, 0.0),
+                C::new(1.0, 0.0),
+            );
         }
 
         let gamma = (series * shunt).sqrt();

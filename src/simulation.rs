@@ -100,11 +100,15 @@ pub struct TransientWaveform {
 impl TransientWaveform {
     /// Total captured samples.
     #[must_use]
-    pub fn len(&self) -> usize { self.times.len() }
+    pub fn len(&self) -> usize {
+        self.times.len()
+    }
 
     /// True if no samples recorded.
     #[must_use]
-    pub fn is_empty(&self) -> bool { self.times.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.times.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -186,7 +190,13 @@ impl MnaTransientEngine {
     }
 
     /// Adds a capacitor with optional initial voltage across (a - b).
-    pub fn add_capacitor(&mut self, a: Node, b: Node, capacitance: Scalar, initial_voltage: Scalar) {
+    pub fn add_capacitor(
+        &mut self,
+        a: Node,
+        b: Node,
+        capacitance: Scalar,
+        initial_voltage: Scalar,
+    ) {
         self.capacitors.push(CapacitorElem {
             a,
             b,
@@ -214,7 +224,11 @@ impl MnaTransientEngine {
     where
         F: Fn(Scalar) -> Scalar + Send + Sync + 'static,
     {
-        self.current_sources.push(CurrentSourceElem { pos, neg, value_fn: Box::new(value_fn) });
+        self.current_sources.push(CurrentSourceElem {
+            pos,
+            neg,
+            value_fn: Box::new(value_fn),
+        });
     }
 
     /// Adds a time-varying voltage source v(t) between pos and neg.
@@ -222,16 +236,24 @@ impl MnaTransientEngine {
     where
         F: Fn(Scalar) -> Scalar + Send + Sync + 'static,
     {
-        self.voltage_sources.push(VoltageSourceElem { pos, neg, value_fn: Box::new(value_fn) });
+        self.voltage_sources.push(VoltageSourceElem {
+            pos,
+            neg,
+            value_fn: Box::new(value_fn),
+        });
     }
 
     /// Returns a reference to the captured waveform (populated after `run`).
     #[must_use]
-    pub fn waveform(&self) -> &TransientWaveform { &self.waveform }
+    pub fn waveform(&self) -> &TransientWaveform {
+        &self.waveform
+    }
 
     /// Consumes and returns the waveform.
     #[must_use]
-    pub fn into_waveform(self) -> TransientWaveform { self.waveform }
+    pub fn into_waveform(self) -> TransientWaveform {
+        self.waveform
+    }
 
     fn stamp_passive_elements(&self, mna: &mut MnaBuilder, dt: Scalar) {
         // Linear resistors
@@ -411,7 +433,9 @@ impl MnaTransientEngine {
 impl SimulationEngine for MnaTransientEngine {
     fn run(&mut self, config: &SimulationConfig) -> Result<(), SimulationError> {
         if config.domain != SimulationDomain::Time {
-            return Err(SimulationError::InvalidConfig("MnaTransientEngine requires Time domain".into()));
+            return Err(SimulationError::InvalidConfig(
+                "MnaTransientEngine requires Time domain".into(),
+            ));
         }
         let duration = config
             .duration
@@ -422,7 +446,9 @@ impl SimulationEngine for MnaTransientEngine {
         let total_time = duration.as_secs_f64();
         let dt = time_step.as_secs_f64();
         if dt <= 0.0 {
-            return Err(SimulationError::InvalidConfig("time_step must be > 0".into()));
+            return Err(SimulationError::InvalidConfig(
+                "time_step must be > 0".into(),
+            ));
         }
 
         // number of steps including t=0
@@ -437,7 +463,8 @@ impl SimulationEngine for MnaTransientEngine {
         // Reuse LU factorization across steps when topology and dt are constant.
         // We compute LU once from the first step's system matrix and then only
         // rebuild the RHS vector on subsequent steps.
-        let mut cached_lu: Option<nalgebra::LU<Complex<Scalar>, nalgebra::Dyn, nalgebra::Dyn>> = None;
+        let mut cached_lu: Option<nalgebra::LU<Complex<Scalar>, nalgebra::Dyn, nalgebra::Dyn>> =
+            None;
         let mut system_dim: usize = 0;
 
         for step_idx in 0..steps {
@@ -460,14 +487,18 @@ impl SimulationEngine for MnaTransientEngine {
                 let lu = a.lu();
                 cached_lu = Some(lu);
             } else if a.nrows() != system_dim || a.ncols() != system_dim {
-                return Err(SimulationError::InvalidConfig("system matrix dimension changed across steps".into()));
+                return Err(SimulationError::InvalidConfig(
+                    "system matrix dimension changed across steps".into(),
+                ));
             }
 
             // Solve using cached LU
             let x = cached_lu
                 .as_ref()
                 .and_then(|lu| lu.solve(&b))
-                .ok_or_else(|| SimulationError::InvalidConfig("linear solve failed in transient step".into()))?;
+                .ok_or_else(|| {
+                    SimulationError::InvalidConfig("linear solve failed in transient step".into())
+                })?;
 
             let (v_complex, i_sources_complex) = mna.split_solution(x);
 
@@ -492,20 +523,36 @@ use std::io;
 use std::io::Write;
 
 /// Writes a CSV of a node's voltage over time from a transient waveform.
-pub fn write_transient_node_csv<W: Write>(mut w: W, waveform: &TransientWaveform, node_index: usize) -> io::Result<()> {
+pub fn write_transient_node_csv<W: Write>(
+    mut w: W,
+    waveform: &TransientWaveform,
+    node_index: usize,
+) -> io::Result<()> {
     writeln!(w, "time,voltage")?;
     for (idx, time) in waveform.times.iter().enumerate() {
-        let v = if node_index < waveform.node_voltages[idx].len() { waveform.node_voltages[idx][node_index] } else { 0.0 };
+        let v = if node_index < waveform.node_voltages[idx].len() {
+            waveform.node_voltages[idx][node_index]
+        } else {
+            0.0
+        };
         writeln!(w, "{:.16e},{:.16e}", time, v)?;
     }
     Ok(())
 }
 
 /// Writes a CSV of a voltage-source current over time (index follows stamping order per step).
-pub fn write_transient_vsource_current_csv<W: Write>(mut w: W, waveform: &TransientWaveform, source_index: usize) -> io::Result<()> {
+pub fn write_transient_vsource_current_csv<W: Write>(
+    mut w: W,
+    waveform: &TransientWaveform,
+    source_index: usize,
+) -> io::Result<()> {
     writeln!(w, "time,current")?;
     for (idx, time) in waveform.times.iter().enumerate() {
-        let i = if source_index < waveform.source_currents[idx].len() { waveform.source_currents[idx][source_index] } else { 0.0 };
+        let i = if source_index < waveform.source_currents[idx].len() {
+            waveform.source_currents[idx][source_index]
+        } else {
+            0.0
+        };
         writeln!(w, "{:.16e},{:.16e}", time, i)?;
     }
     Ok(())
@@ -519,8 +566,7 @@ mod tests {
 
     impl SimulationEngine for DummyEngine {
         fn run(&mut self, config: &SimulationConfig) -> Result<(), SimulationError> {
-            if config.domain == SimulationDomain::Frequency && config.angular_frequency.is_none()
-            {
+            if config.domain == SimulationDomain::Frequency && config.angular_frequency.is_none() {
                 return Err(SimulationError::MissingParameter("angular_frequency"));
             }
             Ok(())

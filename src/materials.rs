@@ -2,8 +2,8 @@
 
 use crate::constants::{VACUUM_PERMEABILITY, VACUUM_PERMITTIVITY};
 use crate::math::Scalar;
-use num_complex::Complex;
 use crate::units::Impedance;
+use num_complex::Complex;
 
 /// Fundamental linear isotropic material parameters expressed in SI units.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -41,7 +41,11 @@ impl MaterialProperties {
         let j = Complex::new(0.0, 1.0);
         let eps_c = Complex::new(self.permittivity, 0.0) - j * (self.conductivity / omega);
         let mu_c = Complex::new(self.permeability, 0.0);
-        MaterialResponse { epsilon: eps_c, mu: mu_c, sigma: self.conductivity }
+        MaterialResponse {
+            epsilon: eps_c,
+            mu: mu_c,
+            sigma: self.conductivity,
+        }
     }
 }
 
@@ -100,7 +104,11 @@ impl DispersiveMaterial for DrudeModel {
         let epsilon = epsilon_rel.re * VACUUM_PERMITTIVITY;
         let sigma = -omega * epsilon_rel.im * VACUUM_PERMITTIVITY;
 
-        MaterialProperties { permittivity: epsilon, permeability: VACUUM_PERMEABILITY, conductivity: sigma }
+        MaterialProperties {
+            permittivity: epsilon,
+            permeability: VACUUM_PERMEABILITY,
+            conductivity: sigma,
+        }
     }
 }
 
@@ -125,7 +133,11 @@ impl MaterialResponseProvider for DrudeModel {
         let denominator = omega_c * (omega_c + j * self.collision_frequency);
         let epsilon_rel = Complex::new(self.epsilon_infinity, 0.0) - numerator / denominator;
         let epsilon = epsilon_rel * Complex::new(VACUUM_PERMITTIVITY, 0.0);
-        MaterialResponse { epsilon, mu: Complex::new(VACUUM_PERMEABILITY, 0.0), sigma: 0.0 }
+        MaterialResponse {
+            epsilon,
+            mu: Complex::new(VACUUM_PERMEABILITY, 0.0),
+            sigma: 0.0,
+        }
     }
 }
 

@@ -1,9 +1,9 @@
 use bevy::prelude::*;
-use em_physics::circuits::stamp::MnaBuilder;
 use em_physics::circuits::component::Switch;
+use em_physics::circuits::stamp::MnaBuilder;
 use em_physics::fields::{
-    electric_field_from_vector_potential, magnetic_field_from_lines, vector_potential_from_lines,
-    LineCurrent, WireSegment3D,
+    LineCurrent, WireSegment3D, electric_field_from_vector_potential, magnetic_field_from_lines,
+    vector_potential_from_lines,
 };
 use em_physics::math::{CScalar, R3, Scalar};
 use num_complex::Complex;
@@ -60,19 +60,20 @@ struct InfoText;
 pub fn main() {
     App::new()
         .insert_resource(CircuitState::default())
-        .add_plugins(
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "em-physics: Interactive Circuit & Field Demo".into(),
-                    resolution: (1200.0, 720.0).into(),
-                    present_mode: bevy::window::PresentMode::AutoVsync,
-                    ..default()
-                }),
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "em-physics: Interactive Circuit & Field Demo".into(),
+                resolution: (1200.0, 720.0).into(),
+                present_mode: bevy::window::PresentMode::AutoVsync,
                 ..default()
             }),
-        )
+            ..default()
+        }))
         .add_systems(Startup, setup)
-        .add_systems(Update, (handle_input, recompute_circuit, update_visuals, update_text))
+        .add_systems(
+            Update,
+            (handle_input, recompute_circuit, update_visuals, update_text),
+        )
         .run();
 }
 
@@ -108,7 +109,11 @@ fn setup(mut commands: Commands) {
             custom_size: Some(Vec2::new(16.0, 16.0)),
             ..default()
         },
-        transform: Transform::from_translation(Vec3::new(OBS_POINT.x as f32, OBS_POINT.y as f32, 0.0)),
+        transform: Transform::from_translation(Vec3::new(
+            OBS_POINT.x as f32,
+            OBS_POINT.y as f32,
+            0.0,
+        )),
         ..default()
     });
 
@@ -123,7 +128,11 @@ fn setup(mut commands: Commands) {
                     custom_size: Some(Vec2::new(12.0, BUS_Y - LOAD_Y - 40.0)),
                     ..default()
                 },
-                transform: Transform::from_translation(Vec3::new(x, (BUS_Y + LOAD_Y) * 0.5 - 20.0, 0.0)),
+                transform: Transform::from_translation(Vec3::new(
+                    x,
+                    (BUS_Y + LOAD_Y) * 0.5 - 20.0,
+                    0.0,
+                )),
                 ..default()
             },
         ));
@@ -157,16 +166,14 @@ fn setup(mut commands: Commands) {
     // Text overlay
     commands.spawn((
         InfoText,
-        TextBundle::from_sections([
-            TextSection::new(
-                "",
-                TextStyle {
-                    font_size: 24.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            ),
-        ])
+        TextBundle::from_sections([TextSection::new(
+            "",
+            TextStyle {
+                font_size: 24.0,
+                color: Color::WHITE,
+                ..default()
+            },
+        )])
         .with_style(Style {
             position_type: PositionType::Absolute,
             top: Val::Px(16.0),
@@ -177,7 +184,10 @@ fn setup(mut commands: Commands) {
 }
 
 fn handle_input(mut state: ResMut<CircuitState>, keys: Res<ButtonInput<KeyCode>>) {
-    for (i, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3].iter().enumerate() {
+    for (i, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3]
+        .iter()
+        .enumerate()
+    {
         if keys.just_pressed(*key) {
             state.switches[i].closed = !state.switches[i].closed;
             state.dirty = true;
@@ -201,7 +211,8 @@ fn recompute_circuit(mut state: ResMut<CircuitState>) {
 
     for sw in &state.switches {
         let r = sw.effective_resistance();
-        if r < 1e11 { // treat as connected
+        if r < 1e11 {
+            // treat as connected
             mna.stamp_resistor(Some(0), None, r);
         }
     }
@@ -316,7 +327,11 @@ fn update_text(state: Res<CircuitState>, mut query: Query<&mut Text, With<InfoTe
                 "Branch {}: {:.3} A through {:.0} Ω",
                 i + 1,
                 i_curr,
-                if sw.closed { sw.on_resistance } else { sw.off_resistance }
+                if sw.closed {
+                    sw.on_resistance
+                } else {
+                    sw.off_resistance
+                }
             )
         })
         .collect();

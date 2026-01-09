@@ -78,10 +78,7 @@ impl TwoPort {
         }
         let inv_c = C::new(1.0, 0.0) / self.c;
         let det = self.determinant();
-        Some([
-            [self.a * inv_c, det * inv_c],
-            [inv_c, self.d * inv_c],
-        ])
+        Some([[self.a * inv_c, det * inv_c], [inv_c, self.d * inv_c]])
     }
 
     /// Converts to Y-parameters. Prefers the direct formula for `b != 0`.
@@ -93,16 +90,11 @@ impl TwoPort {
         if self.b.norm() > eps {
             let inv_b = C::new(1.0, 0.0) / self.b;
             let det = self.determinant();
-            return Some([
-                [self.d * inv_b, -det * inv_b],
-                [-inv_b, self.a * inv_b],
-            ]);
+            return Some([[self.d * inv_b, -det * inv_b], [-inv_b, self.a * inv_b]]);
         }
 
         // Recognize pure shunt form [[1, 0], [Y, 1]]
-        if (self.a - C::new(1.0, 0.0)).norm() <= eps
-            && (self.d - C::new(1.0, 0.0)).norm() <= eps
-        {
+        if (self.a - C::new(1.0, 0.0)).norm() <= eps && (self.d - C::new(1.0, 0.0)).norm() <= eps {
             let y = self.c;
             return Some([[y, -y], [-y, y]]);
         }
@@ -254,7 +246,10 @@ impl TwoPort {
     /// Cascades a sequence of S-parameter blocks with equal reference `z0`.
     /// Converts each to ABCD, cascades, then converts back to S.
     #[must_use]
-    pub fn cascade_s_equal<'a>(list: impl IntoIterator<Item = &'a SParameters>, z0: Scalar) -> Option<SParameters> {
+    pub fn cascade_s_equal<'a>(
+        list: impl IntoIterator<Item = &'a SParameters>,
+        z0: Scalar,
+    ) -> Option<SParameters> {
         let mut acc = TwoPort::identity();
         for s in list {
             let t = TwoPort::from_s_equal(s, z0)?;

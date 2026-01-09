@@ -12,11 +12,33 @@ use super::stamp::{AcContext, MnaBuilder, Node};
 
 #[derive(Debug, Clone)]
 pub enum Element {
-    R { n1: String, n2: String, value: Scalar },
-    C { n1: String, n2: String, value: Scalar },
-    L { n1: String, n2: String, value: Scalar },
-    V { n1: String, n2: String, dc: Option<Scalar>, ac: Option<Complex<Scalar>> },
-    I { n1: String, n2: String, dc: Option<Scalar>, ac: Option<Complex<Scalar>> },
+    R {
+        n1: String,
+        n2: String,
+        value: Scalar,
+    },
+    C {
+        n1: String,
+        n2: String,
+        value: Scalar,
+    },
+    L {
+        n1: String,
+        n2: String,
+        value: Scalar,
+    },
+    V {
+        n1: String,
+        n2: String,
+        dc: Option<Scalar>,
+        ac: Option<Complex<Scalar>>,
+    },
+    I {
+        n1: String,
+        n2: String,
+        dc: Option<Scalar>,
+        ac: Option<Complex<Scalar>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -29,35 +51,47 @@ impl SpiceCircuit {
         let mut elements = Vec::new();
         for line in text.lines() {
             let l = line.trim();
-            if l.is_empty() || l.starts_with('*') || l.starts_with(';') { continue; }
+            if l.is_empty() || l.starts_with('*') || l.starts_with(';') {
+                continue;
+            }
             let toks: Vec<&str> = l.split_whitespace().collect();
-            if toks.is_empty() { continue; }
+            if toks.is_empty() {
+                continue;
+            }
             let head = toks[0].to_ascii_uppercase();
             let c = head.chars().next().unwrap_or(' ');
             match c {
                 'R' => {
-                    if toks.len() < 4 { return Err("Invalid resistor line".into()); }
+                    if toks.len() < 4 {
+                        return Err("Invalid resistor line".into());
+                    }
                     let n1 = toks[1].to_string();
                     let n2 = toks[2].to_string();
                     let val: Scalar = parse_scalar(toks[3])?;
                     elements.push(Element::R { n1, n2, value: val });
                 }
                 'C' => {
-                    if toks.len() < 4 { return Err("Invalid capacitor line".into()); }
+                    if toks.len() < 4 {
+                        return Err("Invalid capacitor line".into());
+                    }
                     let n1 = toks[1].to_string();
                     let n2 = toks[2].to_string();
                     let val: Scalar = parse_scalar(toks[3])?;
                     elements.push(Element::C { n1, n2, value: val });
                 }
                 'L' => {
-                    if toks.len() < 4 { return Err("Invalid inductor line".into()); }
+                    if toks.len() < 4 {
+                        return Err("Invalid inductor line".into());
+                    }
                     let n1 = toks[1].to_string();
                     let n2 = toks[2].to_string();
                     let val: Scalar = parse_scalar(toks[3])?;
                     elements.push(Element::L { n1, n2, value: val });
                 }
                 'V' => {
-                    if toks.len() < 4 { return Err("Invalid voltage source line".into()); }
+                    if toks.len() < 4 {
+                        return Err("Invalid voltage source line".into());
+                    }
                     let n1 = toks[1].to_string();
                     let n2 = toks[2].to_string();
                     let mut dc = None;
@@ -65,18 +99,24 @@ impl SpiceCircuit {
                     let mut i = 3;
                     while i < toks.len() {
                         let t = toks[i].to_ascii_uppercase();
-                        if t == "DC" && i + 1 < toks.len() { dc = Some(parse_scalar(toks[i + 1])?); i += 2; }
-                        else if t == "AC" && i + 2 < toks.len() {
+                        if t == "DC" && i + 1 < toks.len() {
+                            dc = Some(parse_scalar(toks[i + 1])?);
+                            i += 2;
+                        } else if t == "AC" && i + 2 < toks.len() {
                             let mag = parse_scalar(toks[i + 1])?;
                             let phase_deg = parse_scalar(toks[i + 2])?;
                             ac = Some(Complex::from_polar(mag, phase_deg.to_radians()));
                             i += 3;
-                        } else { i += 1; }
+                        } else {
+                            i += 1;
+                        }
                     }
                     elements.push(Element::V { n1, n2, dc, ac });
                 }
                 'I' => {
-                    if toks.len() < 4 { return Err("Invalid current source line".into()); }
+                    if toks.len() < 4 {
+                        return Err("Invalid current source line".into());
+                    }
                     let n1 = toks[1].to_string();
                     let n2 = toks[2].to_string();
                     let mut dc = None;
@@ -84,13 +124,17 @@ impl SpiceCircuit {
                     let mut i = 3;
                     while i < toks.len() {
                         let t = toks[i].to_ascii_uppercase();
-                        if t == "DC" && i + 1 < toks.len() { dc = Some(parse_scalar(toks[i + 1])?); i += 2; }
-                        else if t == "AC" && i + 2 < toks.len() {
+                        if t == "DC" && i + 1 < toks.len() {
+                            dc = Some(parse_scalar(toks[i + 1])?);
+                            i += 2;
+                        } else if t == "AC" && i + 2 < toks.len() {
                             let mag = parse_scalar(toks[i + 1])?;
                             let phase_deg = parse_scalar(toks[i + 2])?;
                             ac = Some(Complex::from_polar(mag, phase_deg.to_radians()));
                             i += 3;
-                        } else { i += 1; }
+                        } else {
+                            i += 1;
+                        }
                     }
                     elements.push(Element::I { n1, n2, dc, ac });
                 }
@@ -108,7 +152,9 @@ impl SpiceCircuit {
             if name == "0" || name.eq_ignore_ascii_case("gnd") {
                 return None;
             }
-            if let Some(n) = node_map.get(name) { return *n; }
+            if let Some(n) = node_map.get(name) {
+                return *n;
+            }
             let idx = Some(node_map.len());
             node_map.insert(name.to_string(), idx);
             idx
@@ -143,15 +189,15 @@ fn parse_scalar(tok: &str) -> Result<Scalar, String> {
     // Support suffixes: k, m, u, n, p, g
     let mut s = tok.trim().to_string();
     let (mult, base) = match s.chars().last() {
-        Some('k') | Some('K') => (1e3, &s[..s.len()-1]),
-        Some('m') => (1e-3, &s[..s.len()-1]),
-        Some('u') | Some('U') => (1e-6, &s[..s.len()-1]),
-        Some('n') | Some('N') => (1e-9, &s[..s.len()-1]),
-        Some('p') | Some('P') => (1e-12, &s[..s.len()-1]),
-        Some('g') | Some('G') => (1e9, &s[..s.len()-1]),
-        _ => (1.0, &s[..])
+        Some('k') | Some('K') => (1e3, &s[..s.len() - 1]),
+        Some('m') => (1e-3, &s[..s.len() - 1]),
+        Some('u') | Some('U') => (1e-6, &s[..s.len() - 1]),
+        Some('n') | Some('N') => (1e-9, &s[..s.len() - 1]),
+        Some('p') | Some('P') => (1e-12, &s[..s.len() - 1]),
+        Some('g') | Some('G') => (1e9, &s[..s.len() - 1]),
+        _ => (1.0, &s[..]),
     };
-    base.parse::<Scalar>().map(|v| v * mult).map_err(|_| "invalid number".into())
+    base.parse::<Scalar>()
+        .map(|v| v * mult)
+        .map_err(|_| "invalid number".into())
 }
-
-

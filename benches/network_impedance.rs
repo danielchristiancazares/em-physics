@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use em_physics::circuits::analysis::sweep_network_impedance;
 use em_physics::circuits::network::ConnectionKind;
 use em_physics::circuits::{component::*, network::Network};
@@ -31,4 +31,3 @@ fn bench_network_sweep(c: &mut Criterion) {
 
 criterion_group!(benches, bench_network_sweep);
 criterion_main!(benches);
-
